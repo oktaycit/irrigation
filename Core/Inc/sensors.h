@@ -15,6 +15,47 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include <stdbool.h>
 #include <stdint.h>
+#include "stm32f4xx_hal.h"
+
+/* Sensor Interface Selection -----------------------------------------------*/
+#define SENSORS_INTERFACE_MODBUS 1U
+#define SENSORS_POLL_INTERVAL_MS 250U
+
+/* Modbus Sensor Configuration ----------------------------------------------*/
+#if SENSORS_INTERFACE_MODBUS
+#define SENSORS_MODBUS_UART_INSTANCE USART1
+#define SENSORS_MODBUS_BAUDRATE 19200U
+#define SENSORS_MODBUS_READ_HOLDING_REGS 0x03U
+
+#define EC_SENSOR_MODBUS_ADDRESS 0x01U
+#define EC_SENSOR_MODBUS_START_REG 0x0000U
+#define EC_SENSOR_MODBUS_REG_COUNT 0x0002U
+
+#define PH_SENSOR_MODBUS_ADDRESS 0x02U
+#define PH_SENSOR_MODBUS_START_REG 0x0000U
+#define PH_SENSOR_MODBUS_REG_COUNT 0x0001U
+
+/*
+ * Example projedeki register yapisina gore:
+ * EC  = register 1
+ * Temp = register 2
+ * pH  = register 1
+ *
+ * Sensor register olcekleri farkliysa bu carpanlari guncelleyin.
+ */
+#define EC_SENSOR_MODBUS_SCALE 100.0f
+#define PH_SENSOR_MODBUS_SCALE 100.0f
+#define TEMP_SENSOR_MODBUS_SCALE 10.0f
+
+#define SENSORS_MODBUS_UART_TIMEOUT_MS 20U
+#define SENSORS_MODBUS_RESPONSE_TIMEOUT_MS 20U
+
+#define SENSORS_RS485_USE_DE_PIN 1U
+#define SENSORS_RS485_DE_PORT GPIOB
+#define SENSORS_RS485_DE_PIN GPIO_PIN_11
+#define SENSORS_RS485_TX_ACTIVE GPIO_PIN_SET
+#define SENSORS_RS485_RX_ACTIVE GPIO_PIN_RESET
+#endif
 
 /* ADC Configuration --------------------------------------------------------*/
 #define PH_ADC_CHANNEL ADC_CHANNEL_0
@@ -40,6 +81,8 @@ extern "C" {
 #define SENSOR_ERROR 1U
 #define SENSOR_OUT_OF_RANGE 2U
 #define SENSOR_NOT_CALIBRATED 3U
+#define SENSOR_TIMEOUT 4U
+#define SENSOR_COMM_ERROR 5U
 
 /* Filter Configuration -----------------------------------------------------*/
 #define FILTER_SAMPLES 10U /* Moving average samples */
@@ -118,6 +161,7 @@ typedef struct {
 void SENSORS_Init(void);
 void SENSORS_StartContinuous(void);
 void SENSORS_StopContinuous(void);
+void SENSORS_Process(void);
 
 /* pH Sensor Functions ------------------------------------------------------*/
 uint8_t PH_Read(ph_sensor_data_t *data);

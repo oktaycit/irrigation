@@ -49,6 +49,8 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim1;
 
 UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart1_tx;
 
 NOR_HandleTypeDef hnor1;
 
@@ -80,6 +82,7 @@ static void MX_USART1_UART_Init(void);
   */
 int main(void)
 {
+  uint32_t last_status_update = 0;
 
   /* USER CODE BEGIN 1 */
 
@@ -110,6 +113,11 @@ int main(void)
   MX_TIM1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  System_Init();
 
   /* USER CODE END 2 */
 
@@ -120,6 +128,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    SENSORS_Process();
+    GUI_Update();
+    IRRIGATION_CTRL_Update();
+
+    if ((HAL_GetTick() - last_status_update) >= 250U)
+    {
+      last_status_update = HAL_GetTick();
+      System_Status_Update();
+    }
   }
   /* USER CODE END 3 */
 }
@@ -385,7 +402,11 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
+#if SENSORS_INTERFACE_MODBUS
+  huart1.Init.BaudRate = SENSORS_MODBUS_BAUDRATE;
+#else
   huart1.Init.BaudRate = 115200;
+#endif
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -421,10 +442,31 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
+  HAL_GPIO_WritePin(GPIOB,
+                    GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|
+                    GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7,
+                    GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_SET);
+
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|
+                        GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7|
+                        GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PC15 */
   GPIO_InitStruct.Pin = GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
@@ -459,7 +501,7 @@ static void MX_FSMC_Init(void)
   hnor1.Init.WaitSignalPolarity = FSMC_WAIT_SIGNAL_POLARITY_LOW;
   hnor1.Init.WrapMode = FSMC_WRAP_MODE_DISABLE;
   hnor1.Init.WaitSignalActive = FSMC_WAIT_TIMING_BEFORE_WS;
-  hnor1.Init.WriteOperation = FSMC_WRITE_OPERATION_DISABLE;
+  hnor1.Init.WriteOperation = FSMC_WRITE_OPERATION_ENABLE;
   hnor1.Init.WaitSignal = FSMC_WAIT_SIGNAL_DISABLE;
   hnor1.Init.ExtendedMode = FSMC_EXTENDED_MODE_DISABLE;
   hnor1.Init.AsynchronousWait = FSMC_ASYNCHRONOUS_WAIT_DISABLE;

@@ -158,6 +158,7 @@ void IRRIGATION_CTRL_Start(void);
 void IRRIGATION_CTRL_Stop(void);
 void IRRIGATION_CTRL_Pause(void);
 void IRRIGATION_CTRL_Resume(void);
+uint8_t IRRIGATION_CTRL_IsRunning(void);
 void IRRIGATION_CTRL_Update(void); /* Ana kontrol döngüsü - periyodik çağır */
 
 /* State Machine ------------------------------------------------------------*/
@@ -186,6 +187,8 @@ void IRRIGATION_CTRL_StartParcel(uint8_t parcel_id);
 void IRRIGATION_CTRL_StopParcel(void);
 void IRRIGATION_CTRL_NextParcel(void);
 uint8_t IRRIGATION_CTRL_IsParcelComplete(void);
+uint8_t IRRIGATION_CTRL_GetCurrentParcelId(void);
+uint32_t IRRIGATION_CTRL_GetRemainingTime(void);
 void IRRIGATION_CTRL_AddToQueue(uint8_t parcel_id);
 void IRRIGATION_CTRL_ClearQueue(void);
 

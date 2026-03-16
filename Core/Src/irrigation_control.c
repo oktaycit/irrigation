@@ -12,6 +12,7 @@
 
 /* Internal Control Structure */
 static irrigation_control_t ctrl = {0};
+static auto_mode_t g_auto_mode = AUTO_MODE_OFF;
 
 /**
  * @brief  Initialize Irrigation Controller
@@ -19,11 +20,19 @@ static irrigation_control_t ctrl = {0};
 void IRRIGATION_CTRL_Init(void) {
     memset(&ctrl, 0, sizeof(irrigation_control_t));
     ctrl.state = CTRL_STATE_IDLE;
+    ctrl.ph_params.target = 6.5f;
+    ctrl.ph_params.min_limit = 5.5f;
+    ctrl.ph_params.max_limit = 7.5f;
+    ctrl.ph_params.hysteresis = IRRIGATION_PH_HYSTERESIS;
+    ctrl.ph_params.dose_time_ms = 500U;
+    ctrl.ec_params.target = 1.8f;
+    ctrl.ec_params.min_limit = 1.0f;
+    ctrl.ec_params.max_limit = 2.5f;
+    ctrl.ec_params.hysteresis = IRRIGATION_EC_HYSTERESIS;
+    ctrl.ec_params.dose_time_ms = 500U;
     
     /* Load parameters from EEPROM */
     EEPROM_LoadSystemParams();
-    /* Map EEPROM params to ctrl params */
-    // ctrl.ph_params.target = h_eeprom.system.ph_target; ...
 }
 
 /**
@@ -186,11 +195,62 @@ uint8_t IRRIGATION_CTRL_IsParcelComplete(void) {
 void IRRIGATION_CTRL_Start(void) {
     ctrl.is_running = 1;
     ctrl.is_paused = 0;
+    if (ctrl.state == CTRL_STATE_IDLE) {
+        ctrl.timers.state_entry_time = HAL_GetTick();
+    }
 }
 
 void IRRIGATION_CTRL_Stop(void) {
     ctrl.is_running = 0;
+    ctrl.is_paused = 0;
+    ctrl.state = CTRL_STATE_IDLE;
+    ctrl.current_parcel.parcel_id = 0;
+    ctrl.current_parcel.valve_id = 0;
     VALVES_CloseAll();
+}
+
+void IRRIGATION_CTRL_Pause(void) {
+    ctrl.is_paused = 1;
+}
+
+void IRRIGATION_CTRL_Resume(void) {
+    ctrl.is_paused = 0;
+}
+
+uint8_t IRRIGATION_CTRL_IsRunning(void) {
+    return ctrl.is_running;
+}
+
+void IRRIGATION_CTRL_SetAutoMode(auto_mode_t mode) {
+    g_auto_mode = mode;
+}
+
+auto_mode_t IRRIGATION_CTRL_GetAutoMode(void) {
+    return g_auto_mode;
+}
+
+control_state_t IRRIGATION_CTRL_GetState(void) {
+    return ctrl.state;
+}
+
+uint8_t IRRIGATION_CTRL_GetCurrentParcelId(void) {
+    return ctrl.current_parcel.parcel_id;
+}
+
+uint32_t IRRIGATION_CTRL_GetRemainingTime(void) {
+    uint32_t elapsed;
+
+    if (!ctrl.is_running || ctrl.current_parcel.parcel_id == 0 ||
+        ctrl.current_parcel.duration_sec == 0) {
+        return 0;
+    }
+
+    elapsed = (HAL_GetTick() - ctrl.current_parcel.start_time) / 1000U;
+    if (elapsed >= ctrl.current_parcel.duration_sec) {
+        return 0;
+    }
+
+    return ctrl.current_parcel.duration_sec - elapsed;
 }
 
 void IRRIGATION_CTRL_EmergencyStop(void) {

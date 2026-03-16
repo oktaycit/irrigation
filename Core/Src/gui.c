@@ -12,8 +12,7 @@
 /* Internal Handle */
 static gui_handle_t h_gui = {0};
 
-/* Screens list */
-static gui_screen_t *g_screens[GUI_MAX_SCREENS];
+static void GUI_DrawSplashScreen(void);
 
 /**
  * @brief  Initialize GUI
@@ -65,16 +64,7 @@ void GUI_NavigateTo(screen_id_t screen_id) {
     
     h_gui.current_screen = screen_id;
     LCD_Clear(ILI9341_BLACK);
-    
-    /* Specific screen initialization */
-    switch (screen_id) {
-        case SCREEN_MAIN:
-            GUI_DrawMainScreen();
-            break;
-        default:
-            GUI_DrawHeader("Menü");
-            break;
-    }
+    GUI_DrawScreen(screen_id);
 }
 
 /**
@@ -93,13 +83,13 @@ void GUI_DrawMainScreen(void) {
     LCD_DrawHLine(0, 35, 320, ILI9341_GRAY);
 
     /* Irrigation Status */
-    if (IRRIGATION_IsRunning()) {
-        uint8_t parcel_id = IRRIGATION_GetCurrentParcel();
+    if (IRRIGATION_CTRL_IsRunning()) {
+        uint8_t parcel_id = IRRIGATION_CTRL_GetCurrentParcelId();
         sprintf(buf, "Parsel %d - Sulaniyor", parcel_id);
         LCD_DrawString(10, 60, buf, ILI9341_WHITE, ILI9341_BLACK, &Font_16x8);
 
         /* Progress Bar */
-        uint32_t rem = IRRIGATION_GetRemainingTime();
+        uint32_t rem = IRRIGATION_CTRL_GetRemainingTime();
         sprintf(buf, "%02d:%02d kaldi", (int)(rem / 60), (int)(rem % 60));
         LCD_DrawString(10, 120, buf, ILI9341_YELLOW, ILI9341_BLACK, &Font_16x8);
         
@@ -150,4 +140,41 @@ void GUI_ProcessTouch(touch_point_t *point) {
 void GUI_DrawHeader(const char *title) {
     LCD_FillRect(0, 0, 320, 30, ILI9341_NAVY);
     LCD_DrawString(10, 7, title, ILI9341_WHITE, ILI9341_NAVY, &Font_16x8);
+}
+
+void GUI_DrawScreen(screen_id_t screen_id) {
+    switch (screen_id) {
+        case SCREEN_SPLASH:
+            GUI_DrawSplashScreen();
+            break;
+        case SCREEN_MAIN:
+            GUI_DrawMainScreen();
+            break;
+        case SCREEN_MANUAL:
+            GUI_DrawHeader("Manuel");
+            break;
+        case SCREEN_SETTINGS:
+            GUI_DrawHeader("Ayarlar");
+            break;
+        default:
+            GUI_DrawHeader("Menü");
+            break;
+    }
+}
+
+screen_id_t GUI_GetCurrentScreen(void) {
+    return (screen_id_t)h_gui.current_screen;
+}
+
+void GUI_Redraw(void) {
+    LCD_Clear(ILI9341_BLACK);
+    GUI_DrawScreen((screen_id_t)h_gui.current_screen);
+}
+
+static void GUI_DrawSplashScreen(void) {
+    LCD_Clear(ILI9341_BLACK);
+    LCD_DrawString(48, 72, "STM32 SULAMA", ILI9341_GREEN, ILI9341_BLACK,
+                   &Font_24x16);
+    LCD_DrawString(56, 116, "Kontrol Sistemi", ILI9341_CYAN, ILI9341_BLACK,
+                   &Font_16x8);
 }

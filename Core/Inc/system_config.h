@@ -19,7 +19,7 @@ extern "C" {
 /* System Clock Configuration -----------------------------------------------*/
 /* HSE_VALUE is defined in stm32f4xx_hal_conf.h */
 #define HSE_BYPASS 0U
-#define CLOCK_SOURCE RCC_CLOCKTYPE_HSE
+#define CLOCK_SOURCE RCC_PLLSOURCE_HSI
 #define SYSCLK_FREQ 168000000U      /* 168 MHz System Clock */
 #define HCLK_FREQ SYSCLK_FREQ       /* AHB Clock */
 #define PCLK1_FREQ (HCLK_FREQ / 4U) /* APB1 Clock (42 MHz) */

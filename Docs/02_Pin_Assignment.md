@@ -8,7 +8,7 @@
 | Touch SPI | 4 | PA5-PA7, PB10 |
 | ADC (pH, EC) | 2 | PA0, PA1 |
 | Vana Kontrol | 8 | PB0-PB7 |
-| I2C (EEPROM) | 2 | PB6, PB7 |
+| I2C (EEPROM) | 2 | PB8, PB9 |
 | USART (Debug) | 2 | PA9, PA10 |
 | 1-Wire (Temp) | 1 | PB12 |
 | LED/Buzzer | 2 | PC13, PC14 |

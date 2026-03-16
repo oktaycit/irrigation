@@ -8,11 +8,14 @@
 #include "main.h"
 #include "irrigation_control.h"
 
+SystemStatus_t gSystemStatus = {0};
+
 /**
  * @brief  Global System Initialization
  */
 void System_Init(void) {
     /* Initialize peripherals and drivers in correct order */
+    gSystemStatus = (SystemStatus_t){0};
     
     /* 1. EEPROM (to load settings) */
     if (EEPROM_Init() == EEPROM_OK) {
@@ -25,6 +28,9 @@ void System_Init(void) {
     
     TOUCH_Init();
     gSystemStatus.touch_ok = 1;
+
+    GUI_Init();
+    LCD_SetBacklight(80);
 
     /* 3. Sensors */
     SENSORS_Init();

@@ -34,6 +34,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 #include "system_config.h"
 #include "touch_xpt2046.h"
 #include "valves.h"
+#include "irrigation_control.h"
 
 #ifdef __cplusplus
 }
