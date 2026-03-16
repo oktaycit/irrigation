@@ -60,7 +60,7 @@ typedef enum {
   CTRL_STATE_DISABLED,
   CTRL_STATE_FOCUSED,
   CTRL_STATE_HIDDEN
-} control_state_t;
+} gui_control_state_t;
 
 /* Event Tipleri ------------------------------------------------------------*/
 typedef enum {
@@ -134,7 +134,7 @@ typedef struct {
 /* Control Base Yapısı ------------------------------------------------------*/
 typedef struct {
   control_type_t type;
-  control_state_t state;
+  gui_control_state_t state;
   uint16_t x;
   uint16_t y;
   uint16_t width;
@@ -145,7 +145,7 @@ typedef struct {
     label_control_t label;
     button_control_t button;
     slider_control_t slider;
-    progress_bar_t progress;
+    progress_bar_control_t progress;
     number_box_control_t number;
   } data;
 } gui_control_t;
@@ -220,6 +220,8 @@ void GUI_DrawValueBox(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                       lcd_color_t fg, lcd_color_t bg);
 void GUI_DrawStatusbar(const char *left_text, const char *right_text);
 void GUI_DrawHeader(const char *title);
+void GUI_DrawButton(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                    const char *text, lcd_color_t color);
 
 /* Ana Ekran Widget'ları ----------------------------------------------------*/
 void GUI_DrawMainScreen(void);

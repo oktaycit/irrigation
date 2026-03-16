@@ -135,6 +135,8 @@ void LCD_SetCursor(uint16_t x, uint16_t y);
 void LCD_DrawPixel(uint16_t x, uint16_t y, lcd_color_t color);
 void LCD_DrawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,
                   lcd_color_t color);
+void LCD_DrawHLine(uint16_t x, uint16_t y, uint16_t length, lcd_color_t color);
+void LCD_DrawVLine(uint16_t x, uint16_t y, uint16_t length, lcd_color_t color);
 void LCD_DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                   lcd_color_t color);
 void LCD_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,

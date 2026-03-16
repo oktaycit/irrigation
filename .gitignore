@@ -1,0 +1,22 @@
+# STM32CubeIDE
+.settings/
+*.launch
+*.log
+.DS_Store
+
+# Build outputs
+Debug/
+Release/
+*.o
+*.d
+*.elf
+*.map
+*.lst
+
+# IDE specific
+*.swp
+*.swo
+*~
+
+# Generated files (optional - uncomment if needed)
+# Drivers/

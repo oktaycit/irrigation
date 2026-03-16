@@ -17,7 +17,7 @@ extern "C" {
 #include <stdint.h>
 
 /* System Clock Configuration -----------------------------------------------*/
-#define HSE_VALUE ((uint32_t)8000000U) /* 8 MHz External oscillator */
+/* HSE_VALUE is defined in stm32f4xx_hal_conf.h */
 #define HSE_BYPASS 0U
 #define CLOCK_SOURCE RCC_CLOCKTYPE_HSE
 #define SYSCLK_FREQ 168000000U      /* 168 MHz System Clock */
@@ -26,8 +26,7 @@ extern "C" {
 #define PCLK2_FREQ (HCLK_FREQ / 2U) /* APB2 Clock (84 MHz) */
 
 /* Memory Map ----------------------------------------------------------------*/
-#define FLASH_BASE 0x08000000U
-#define SRAM_BASE 0x20000000U
+/* FLASH_BASE and SRAM_BASE are defined in CMSIS device header */
 #define FLASH_SIZE 512U /* 512 KB */
 #define SRAM_SIZE 192U  /* 192 KB */
 
