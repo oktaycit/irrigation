@@ -97,8 +97,11 @@ typedef struct {
   uint32_t last_ec_check;
   uint32_t last_irrigation;
   uint32_t state_entry_time;
+  uint32_t dose_start_time;
   uint32_t mixing_start_time;
+  uint32_t mixing_duration_ms;
   uint32_t settling_start_time;
+  uint32_t settling_duration_ms;
 } irrigation_timers_t;
 
 /* Ana Kontrol Yapısı -------------------------------------------------------*/

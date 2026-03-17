@@ -17,7 +17,7 @@ Durum ozeti: Proje derlenebilir firmware prototipi asamasinda. Hedef, 2026-03-23
 - [ ] Placeholder ilerleme cubugunu gercek hesap ile degistir
 
 ### 2026-03-19 - Sulama Algoritmasi
-- [ ] `HAL_Delay()` kullanan dozaj akislarini non-blocking state machine yapisina tasi
+ - [x] `HAL_Delay()` kullanan dozaj akislarini non-blocking state machine yapisina tasi
 - [ ] pH baz duzeltme akisini ekle
 - [ ] Karistirma ve bekleme sureclerini netlestir
 - [ ] Hata durumlarinda guvenli kapanis davranisini tamamla

@@ -19,6 +19,7 @@ static irrigation_schedule_t g_schedules[VALVE_COUNT] = {0};
 static void IRRIGATION_CTRL_ChangeState(control_state_t new_state);
 static void IRRIGATION_CTRL_CompleteDoseIfNeeded(void);
 static void IRRIGATION_CTRL_UpdateDoseState(uint8_t valve_id, uint32_t dose_time_ms);
+static void IRRIGATION_CTRL_ResetProcessTimers(void);
 static void IRRIGATION_CTRL_ResetCurrentParcel(void);
 static uint8_t IRRIGATION_CTRL_IsParcelQueued(uint8_t parcel_id);
 
@@ -43,6 +44,7 @@ void IRRIGATION_CTRL_Init(void) {
     ctrl.ph_params.auto_adjust_enabled = 1U;
     ctrl.ec_params.auto_adjust_enabled = 1U;
     g_active_dosing_valve = 0U;
+    IRRIGATION_CTRL_ResetProcessTimers();
     
     /* Load parameters from EEPROM */
     EEPROM_LoadSystemParams();
@@ -347,7 +349,7 @@ void IRRIGATION_CTRL_Stop(void) {
     IRRIGATION_CTRL_ResetCurrentParcel();
     IRRIGATION_CTRL_ClearQueue();
     IRRIGATION_CTRL_StopMixing();
-    ctrl.timers.settling_start_time = 0U;
+    IRRIGATION_CTRL_ResetProcessTimers();
     IRRIGATION_CTRL_ChangeState(CTRL_STATE_IDLE);
     VALVES_CloseAll();
 }
@@ -462,29 +464,54 @@ void IRRIGATION_CTRL_ClearQueue(void) {
 }
 
 void IRRIGATION_CTRL_StartMixing(void) {
+    uint32_t mixing_duration_ms = IRRIGATION_MIXING_TIME * 1000U;
+
+    if (ctrl.state == CTRL_STATE_PH_ADJUSTING &&
+        ctrl.ph_params.wait_time_ms != 0U) {
+        mixing_duration_ms = ctrl.ph_params.wait_time_ms;
+    } else if (ctrl.state == CTRL_STATE_EC_ADJUSTING &&
+               ctrl.ec_params.wait_time_ms != 0U) {
+        mixing_duration_ms = ctrl.ec_params.wait_time_ms;
+    }
+
     IRRIGATION_CTRL_CompleteDoseIfNeeded();
     ctrl.timers.mixing_start_time = HAL_GetTick();
+    ctrl.timers.mixing_duration_ms = mixing_duration_ms;
     IRRIGATION_CTRL_ChangeState(CTRL_STATE_MIXING);
 }
 
 void IRRIGATION_CTRL_StopMixing(void) {
     ctrl.timers.mixing_start_time = 0U;
+    ctrl.timers.mixing_duration_ms = 0U;
 }
 
 uint8_t IRRIGATION_CTRL_IsMixingComplete(void) {
+    uint32_t mixing_duration_ms = ctrl.timers.mixing_duration_ms;
+
+    if (mixing_duration_ms == 0U) {
+        mixing_duration_ms = IRRIGATION_MIXING_TIME * 1000U;
+    }
+
     return ((HAL_GetTick() - ctrl.timers.mixing_start_time) >=
-            (IRRIGATION_MIXING_TIME * 1000U)) ? 1U : 0U;
+            mixing_duration_ms) ? 1U : 0U;
 }
 
 void IRRIGATION_CTRL_StartSettling(void) {
     IRRIGATION_CTRL_StopMixing();
     ctrl.timers.settling_start_time = HAL_GetTick();
+    ctrl.timers.settling_duration_ms = IRRIGATION_SETTLING_TIME * 1000U;
     IRRIGATION_CTRL_ChangeState(CTRL_STATE_SETTLING);
 }
 
 uint8_t IRRIGATION_CTRL_IsSettlingComplete(void) {
+    uint32_t settling_duration_ms = ctrl.timers.settling_duration_ms;
+
+    if (settling_duration_ms == 0U) {
+        settling_duration_ms = IRRIGATION_SETTLING_TIME * 1000U;
+    }
+
     return ((HAL_GetTick() - ctrl.timers.settling_start_time) >=
-            (IRRIGATION_SETTLING_TIME * 1000U)) ? 1U : 0U;
+            settling_duration_ms) ? 1U : 0U;
 }
 
 void IRRIGATION_CTRL_SetError(error_code_t error) {
@@ -497,6 +524,7 @@ void IRRIGATION_CTRL_SetError(error_code_t error) {
     ctrl.is_paused = 0U;
     ctrl.is_running = 0U;
     IRRIGATION_CTRL_CompleteDoseIfNeeded();
+    IRRIGATION_CTRL_ResetProcessTimers();
     IRRIGATION_CTRL_ResetCurrentParcel();
     IRRIGATION_CTRL_ClearQueue();
     IRRIGATION_CTRL_ChangeState(CTRL_STATE_ERROR);
@@ -555,6 +583,7 @@ const char *IRRIGATION_CTRL_GetErrorString(error_code_t error) {
 
 void IRRIGATION_CTRL_EmergencyStop(void) {
     IRRIGATION_CTRL_CompleteDoseIfNeeded();
+    IRRIGATION_CTRL_ResetProcessTimers();
     IRRIGATION_CTRL_ResetCurrentParcel();
     IRRIGATION_CTRL_ClearQueue();
     ctrl.error_flags = 1U;
@@ -641,6 +670,8 @@ static void IRRIGATION_CTRL_CompleteDoseIfNeeded(void) {
         VALVES_Close(g_active_dosing_valve);
         g_active_dosing_valve = 0U;
     }
+
+    ctrl.timers.dose_start_time = 0U;
 }
 
 static void IRRIGATION_CTRL_UpdateDoseState(uint8_t valve_id, uint32_t dose_time_ms) {
@@ -652,7 +683,7 @@ static void IRRIGATION_CTRL_UpdateDoseState(uint8_t valve_id, uint32_t dose_time
     if (g_active_dosing_valve == 0U) {
         g_active_dosing_valve = valve_id;
         VALVES_Open(g_active_dosing_valve);
-        ctrl.timers.state_entry_time = HAL_GetTick();
+        ctrl.timers.dose_start_time = HAL_GetTick();
         return;
     }
 
@@ -660,11 +691,11 @@ static void IRRIGATION_CTRL_UpdateDoseState(uint8_t valve_id, uint32_t dose_time
         IRRIGATION_CTRL_CompleteDoseIfNeeded();
         g_active_dosing_valve = valve_id;
         VALVES_Open(g_active_dosing_valve);
-        ctrl.timers.state_entry_time = HAL_GetTick();
+        ctrl.timers.dose_start_time = HAL_GetTick();
         return;
     }
 
-    if ((HAL_GetTick() - ctrl.timers.state_entry_time) >= dose_time_ms) {
+    if ((HAL_GetTick() - ctrl.timers.dose_start_time) >= dose_time_ms) {
         IRRIGATION_CTRL_CompleteDoseIfNeeded();
         if (ctrl.state == CTRL_STATE_PH_ADJUSTING) {
             IRRIGATION_CTRL_OnPHAdjusted(ctrl.ph_data.ph_value);
@@ -673,6 +704,14 @@ static void IRRIGATION_CTRL_UpdateDoseState(uint8_t valve_id, uint32_t dose_time
         }
         IRRIGATION_CTRL_StartMixing();
     }
+}
+
+static void IRRIGATION_CTRL_ResetProcessTimers(void) {
+    ctrl.timers.dose_start_time = 0U;
+    ctrl.timers.mixing_start_time = 0U;
+    ctrl.timers.mixing_duration_ms = 0U;
+    ctrl.timers.settling_start_time = 0U;
+    ctrl.timers.settling_duration_ms = 0U;
 }
 
 static void IRRIGATION_CTRL_ResetCurrentParcel(void) {
