@@ -13,6 +13,80 @@ extern TIM_HandleTypeDef htim1;
 /* Orientation Private Variable */
 static lcd_orientation_t current_orientation = LCD_ORIENTATION_PORTRAIT;
 
+typedef struct {
+  char character;
+  uint8_t rows[7];
+} lcd_fallback_glyph_t;
+
+static const lcd_fallback_glyph_t g_lcd_fallback_font[] = {
+    {' ', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+    {'+', {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}},
+    {'-', {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}},
+    {'.', {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C}},
+    {':', {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00}},
+    {'/', {0x01, 0x02, 0x04, 0x08, 0x10, 0x00, 0x00}},
+    {'0', {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}},
+    {'1', {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}},
+    {'2', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}},
+    {'3', {0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E}},
+    {'4', {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}},
+    {'5', {0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E}},
+    {'6', {0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E}},
+    {'7', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}},
+    {'8', {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}},
+    {'9', {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E}},
+    {'?', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04}},
+    {'A', {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}},
+    {'B', {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}},
+    {'C', {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}},
+    {'D', {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E}},
+    {'E', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}},
+    {'F', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}},
+    {'G', {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0E}},
+    {'H', {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}},
+    {'I', {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}},
+    {'J', {0x07, 0x02, 0x02, 0x02, 0x12, 0x12, 0x0C}},
+    {'K', {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}},
+    {'L', {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}},
+    {'M', {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11}},
+    {'N', {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}},
+    {'O', {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+    {'P', {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}},
+    {'Q', {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D}},
+    {'R', {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}},
+    {'S', {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}},
+    {'T', {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}},
+    {'U', {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+    {'V', {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04}},
+    {'W', {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A}},
+    {'X', {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11}},
+    {'Y', {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04}},
+    {'Z', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}},
+};
+
+static const uint8_t *LCD_GetFallbackGlyph(char c);
+static void LCD_DrawFallbackChar(uint16_t x, uint16_t y, char c,
+                                 lcd_color_t fg, lcd_color_t bg,
+                                 const lcd_font_t *font);
+
+uint16_t LCD_GetDisplayWidth(void) {
+  if (current_orientation == LCD_ORIENTATION_LANDSCAPE ||
+      current_orientation == LCD_ORIENTATION_LANDSCAPE_FLIP) {
+    return LCD_HEIGHT;
+  }
+
+  return LCD_WIDTH;
+}
+
+uint16_t LCD_GetDisplayHeight(void) {
+  if (current_orientation == LCD_ORIENTATION_LANDSCAPE ||
+      current_orientation == LCD_ORIENTATION_LANDSCAPE_FLIP) {
+    return LCD_WIDTH;
+  }
+
+  return LCD_HEIGHT;
+}
+
 /**
  * @brief  LCD Reset function
  */
@@ -223,33 +297,15 @@ void LCD_SetAddressWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
  * @brief  Set Cursor Position
  */
 void LCD_SetCursor(uint16_t x, uint16_t y) {
-  uint16_t w, h;
-  if (current_orientation == LCD_ORIENTATION_LANDSCAPE ||
-      current_orientation == LCD_ORIENTATION_LANDSCAPE_FLIP) {
-    w = LCD_HEIGHT;
-    h = LCD_WIDTH;
-  } else {
-    w = LCD_WIDTH;
-    h = LCD_HEIGHT;
-  }
-  LCD_SetAddressWindow(x, y, w - 1, h - 1);
+  LCD_SetAddressWindow(x, y, LCD_GetDisplayWidth() - 1U,
+                       LCD_GetDisplayHeight() - 1U);
 }
 
 /**
  * @brief  Draw Pixel
  */
 void LCD_DrawPixel(uint16_t x, uint16_t y, lcd_color_t color) {
-  uint16_t w, h;
-  if (current_orientation == LCD_ORIENTATION_LANDSCAPE ||
-      current_orientation == LCD_ORIENTATION_LANDSCAPE_FLIP) {
-    w = LCD_HEIGHT;
-    h = LCD_WIDTH;
-  } else {
-    w = LCD_WIDTH;
-    h = LCD_HEIGHT;
-  }
-
-  if (x >= w || y >= h) return;
+  if (x >= LCD_GetDisplayWidth() || y >= LCD_GetDisplayHeight()) return;
 
   LCD_SetAddressWindow(x, y, x, y);
   LCD_WriteCommand(ILI9341_RAMWR);
@@ -329,23 +385,7 @@ void LCD_DrawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,
  */
 void LCD_DrawChar(uint16_t x, uint16_t y, char c, lcd_color_t fg,
                   lcd_color_t bg, const lcd_font_t *font) {
-  if (c < font->first_char || c > font->last_char) return;
-
-  uint16_t char_index = c - font->first_char;
-  const uint8_t *char_data =
-      &font->data[char_index * ((font->width + 7) / 8) * font->height];
-
-  for (uint16_t j = 0; j < font->height; j++) {
-    for (uint16_t i = 0; i < font->width; i++) {
-        uint16_t byte_idx = j * ((font->width + 7) / 8) + (i / 8);
-        uint8_t bit_idx = 7 - (i % 8);
-        if (char_data[byte_idx] & (1 << bit_idx)) {
-            LCD_DrawPixel(x + i, y + j, fg);
-        } else if (fg != bg) {
-            LCD_DrawPixel(x + i, y + j, bg);
-        }
-    }
-  }
+  LCD_DrawFallbackChar(x, y, c, fg, bg, font);
 }
 
 /**
@@ -355,7 +395,84 @@ void LCD_DrawString(uint16_t x, uint16_t y, const char *str, lcd_color_t fg,
                     lcd_color_t bg, const lcd_font_t *font) {
   while (*str) {
     LCD_DrawChar(x, y, *str++, fg, bg, font);
-    x += font->width;
+    x += (font != NULL && font->width > 0U) ? font->width : 6U;
+  }
+}
+
+static const uint8_t *LCD_GetFallbackGlyph(char c) {
+  size_t i;
+
+  if (c >= 'a' && c <= 'z') {
+    c = (char)(c - ('a' - 'A'));
+  }
+
+  for (i = 0; i < (sizeof(g_lcd_fallback_font) / sizeof(g_lcd_fallback_font[0]));
+       i++) {
+    if (g_lcd_fallback_font[i].character == c) {
+      return g_lcd_fallback_font[i].rows;
+    }
+  }
+
+  for (i = 0; i < (sizeof(g_lcd_fallback_font) / sizeof(g_lcd_fallback_font[0]));
+       i++) {
+    if (g_lcd_fallback_font[i].character == '?') {
+      return g_lcd_fallback_font[i].rows;
+    }
+  }
+
+  return g_lcd_fallback_font[0].rows;
+}
+
+static void LCD_DrawFallbackChar(uint16_t x, uint16_t y, char c,
+                                 lcd_color_t fg, lcd_color_t bg,
+                                 const lcd_font_t *font) {
+  uint16_t scale_x = 1U;
+  uint16_t scale_y = 1U;
+  uint16_t char_w;
+  uint16_t char_h;
+  uint16_t row;
+  uint16_t col;
+  uint16_t dx;
+  uint16_t dy;
+  const uint8_t *glyph;
+
+  if (font != NULL) {
+    if (font->width >= 10U) {
+      scale_x = 2U;
+    }
+    if (font->height >= 16U) {
+      scale_y = 2U;
+    }
+    if (font->width >= 18U) {
+      scale_x = 3U;
+    }
+    if (font->height >= 24U) {
+      scale_y = 3U;
+    }
+  }
+
+  char_w = 5U * scale_x;
+  char_h = 7U * scale_y;
+  glyph = LCD_GetFallbackGlyph(c);
+
+  if (fg != bg) {
+    for (row = 0; row < char_h; row++) {
+      for (col = 0; col < char_w; col++) {
+        LCD_DrawPixel(x + col, y + row, bg);
+      }
+    }
+  }
+
+  for (row = 0; row < 7U; row++) {
+    for (col = 0; col < 5U; col++) {
+      if ((glyph[row] & (1U << (4U - col))) == 0U) continue;
+
+      for (dy = 0; dy < scale_y; dy++) {
+        for (dx = 0; dx < scale_x; dx++) {
+          LCD_DrawPixel(x + (col * scale_x) + dx, y + (row * scale_y) + dy, fg);
+        }
+      }
+    }
   }
 }
 

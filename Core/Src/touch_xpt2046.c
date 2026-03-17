@@ -83,6 +83,9 @@ static uint8_t TOUCH_ReadRawAvg(uint8_t cmd, uint16_t *val) {
  * @brief  Read Processed Touch Point
  */
 uint8_t TOUCH_ReadPoint(touch_point_t *point) {
+    uint16_t display_width;
+    uint16_t display_height;
+
     if (!TOUCH_IsPressed()) {
         point->pressed = 0;
         return 0;
@@ -95,18 +98,29 @@ uint8_t TOUCH_ReadPoint(touch_point_t *point) {
     point->raw_x = raw_x;
     point->raw_y = raw_y;
     point->pressed = 1;
+    display_width = LCD_GetDisplayWidth();
+    display_height = LCD_GetDisplayHeight();
 
     /* Apply calibration if valid */
     if (current_cal.valid) {
-        point->x = (current_cal.a * raw_x + current_cal.b * raw_y + current_cal.c) / current_cal.e;
-        point->y = (current_cal.d * raw_x + current_cal.e * raw_y + current_cal.f) / current_cal.f; // Wait, logic might need check based on actual calibration formula
-        
-        /* Simple linear mapping as fallback if formula is different */
-        /* Normally: screen_x = (a*raw_x + b*raw_y + c) / divider */
+        int32_t x = ((current_cal.a * (int32_t)raw_x) + current_cal.c);
+        int32_t y = ((current_cal.d * (int32_t)raw_y) + current_cal.f);
+        int32_t x_div = (current_cal.e != 0) ? current_cal.e : 4096;
+        int32_t y_div = (current_cal.f != 0) ? current_cal.f : 4096;
+
+        x /= x_div;
+        y /= y_div;
+
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+        if (x >= (int32_t)display_width) x = (int32_t)display_width - 1;
+        if (y >= (int32_t)display_height) y = (int32_t)display_height - 1;
+
+        point->x = (int16_t)x;
+        point->y = (int16_t)y;
     } else {
-        /* Raw mapping as fallback */
-        point->x = (int16_t)((uint32_t)raw_x * LCD_WIDTH / 4096);
-        point->y = (int16_t)((uint32_t)raw_y * LCD_HEIGHT / 4096);
+        point->x = (int16_t)(((uint32_t)raw_x * display_width) / 4096U);
+        point->y = (int16_t)(((uint32_t)raw_y * display_height) / 4096U);
     }
 
     return 1;

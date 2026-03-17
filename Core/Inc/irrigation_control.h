@@ -150,6 +150,8 @@ void IRRIGATION_CTRL_SetPHParams(float target, float min, float max,
                                  float hyst);
 void IRRIGATION_CTRL_SetECParams(float target, float min, float max,
                                  float hyst);
+void IRRIGATION_CTRL_GetPHParams(ph_control_params_t *params);
+void IRRIGATION_CTRL_GetECParams(ec_control_params_t *params);
 void IRRIGATION_CTRL_SetParcelDuration(uint8_t parcel_id,
                                        uint32_t duration_sec);
 

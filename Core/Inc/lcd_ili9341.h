@@ -130,6 +130,8 @@ typedef struct {
 void LCD_Init(void);
 void LCD_Reset(void);
 void LCD_SetOrientation(lcd_orientation_t orientation);
+uint16_t LCD_GetDisplayWidth(void);
+uint16_t LCD_GetDisplayHeight(void);
 void LCD_Clear(lcd_color_t color);
 void LCD_SetCursor(uint16_t x, uint16_t y);
 void LCD_DrawPixel(uint16_t x, uint16_t y, lcd_color_t color);

@@ -92,6 +92,30 @@ uint8_t VALVES_GetState(uint8_t valve_id) {
     return g_valves[valve_id - 1].state;
 }
 
+void VALVES_SetMode(uint8_t valve_id, valve_mode_t mode) {
+    if (valve_id == 0 || valve_id > VALVE_COUNT) return;
+    g_valves[valve_id - 1].mode = mode;
+}
+
+valve_mode_t VALVES_GetMode(uint8_t valve_id) {
+    if (valve_id == 0 || valve_id > VALVE_COUNT) return VALVE_MODE_DISABLED;
+    return g_valves[valve_id - 1].mode;
+}
+
+void VALVES_ManualOpen(uint8_t valve_id) {
+    VALVES_SetMode(valve_id, VALVE_MODE_MANUAL);
+    VALVES_Open(valve_id);
+}
+
+void VALVES_ManualClose(uint8_t valve_id) {
+    VALVES_Close(valve_id);
+}
+
+uint8_t VALVES_IsManualMode(uint8_t valve_id) {
+    if (valve_id == 0 || valve_id > VALVE_COUNT) return 0;
+    return (g_valves[valve_id - 1].mode == VALVE_MODE_MANUAL);
+}
+
 /**
  * @brief  Emergency stop for all valves
  */
@@ -117,6 +141,31 @@ void VALVES_OpenAll(void) {
     }
 }
 
+uint16_t VALVES_GetActiveMask(void) {
+    uint16_t mask = 0U;
+
+    for (uint8_t i = 0U; i < VALVE_COUNT; i++) {
+        if (g_valves[i].state == VALVE_STATE_OPEN) {
+            mask |= (uint16_t)(1U << i);
+        }
+    }
+
+    return mask;
+}
+
+void VALVES_SetActiveMask(uint16_t mask) {
+    for (uint8_t i = 0U; i < VALVE_COUNT; i++) {
+        if ((mask & (1U << i)) != 0U) {
+            VALVES_Open(i + 1U);
+        } else {
+            VALVES_Close(i + 1U);
+        }
+    }
+}
+
+void VALVES_Update(void) {
+}
+
 /**
  * @brief  Internal state update helper
  */
@@ -138,6 +187,30 @@ void PARCELS_SetDuration(uint8_t parcel_id, uint32_t duration_sec) {
 uint32_t PARCELS_GetDuration(uint8_t parcel_id) {
     if (parcel_id == 0 || parcel_id > VALVE_COUNT) return 0;
     return g_parcels[parcel_id - 1].irrigation_duration_sec;
+}
+
+void PARCELS_SetEnabled(uint8_t parcel_id, uint8_t enabled) {
+    if (parcel_id == 0 || parcel_id > VALVE_COUNT) return;
+    g_parcels[parcel_id - 1].enabled = (enabled != 0U) ? 1U : 0U;
+}
+
+uint8_t PARCELS_IsEnabled(uint8_t parcel_id) {
+    if (parcel_id == 0 || parcel_id > VALVE_COUNT) return 0;
+    return g_parcels[parcel_id - 1].enabled;
+}
+
+void PARCELS_SetName(uint8_t parcel_id, const char *name) {
+    if (parcel_id == 0 || parcel_id > VALVE_COUNT || name == NULL) return;
+
+    snprintf(g_parcels[parcel_id - 1].name, sizeof(g_parcels[parcel_id - 1].name),
+             "%s", name);
+}
+
+const char *PARCELS_GetName(uint8_t parcel_id) {
+    static const char *empty_name = "";
+
+    if (parcel_id == 0 || parcel_id > VALVE_COUNT) return empty_name;
+    return g_parcels[parcel_id - 1].name;
 }
 
 /* Irrigation Logic Implementation */

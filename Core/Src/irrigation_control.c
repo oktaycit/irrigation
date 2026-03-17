@@ -35,6 +35,63 @@ void IRRIGATION_CTRL_Init(void) {
     EEPROM_LoadSystemParams();
 }
 
+void IRRIGATION_CTRL_SetPHParams(float target, float min, float max,
+                                 float hyst) {
+    if (min > max) {
+        float tmp = min;
+        min = max;
+        max = tmp;
+    }
+
+    if (target < min) target = min;
+    if (target > max) target = max;
+
+    ctrl.ph_params.target = target;
+    ctrl.ph_params.min_limit = min;
+    ctrl.ph_params.max_limit = max;
+    if (hyst > 0.0f) {
+        ctrl.ph_params.hysteresis = hyst;
+    }
+}
+
+void IRRIGATION_CTRL_SetECParams(float target, float min, float max,
+                                 float hyst) {
+    if (min > max) {
+        float tmp = min;
+        min = max;
+        max = tmp;
+    }
+
+    if (target < min) target = min;
+    if (target > max) target = max;
+
+    ctrl.ec_params.target = target;
+    ctrl.ec_params.min_limit = min;
+    ctrl.ec_params.max_limit = max;
+    if (hyst > 0.0f) {
+        ctrl.ec_params.hysteresis = hyst;
+    }
+}
+
+void IRRIGATION_CTRL_GetPHParams(ph_control_params_t *params) {
+    if (params == NULL) return;
+    *params = ctrl.ph_params;
+}
+
+void IRRIGATION_CTRL_GetECParams(ec_control_params_t *params) {
+    if (params == NULL) return;
+    *params = ctrl.ec_params;
+}
+
+void IRRIGATION_CTRL_SetParcelDuration(uint8_t parcel_id,
+                                       uint32_t duration_sec) {
+    if (duration_sec == 0U) {
+        duration_sec = 30U;
+    }
+
+    PARCELS_SetDuration(parcel_id, duration_sec);
+}
+
 /**
  * @brief  Main Control Update (Called periodically)
  */
@@ -120,6 +177,32 @@ void IRRIGATION_CTRL_Update(void) {
 void IRRIGATION_CTRL_ReadSensors(void) {
     ctrl.ph_data.ph_value = PH_GetValue();
     ctrl.ec_data.ec_value = EC_GetValue();
+    ctrl.ph_data.status = PH_GetStatus();
+    ctrl.ec_data.status = EC_GetStatus();
+}
+
+float IRRIGATION_CTRL_GetPH(void) {
+    return PH_GetValue();
+}
+
+float IRRIGATION_CTRL_GetEC(void) {
+    return EC_GetValue();
+}
+
+uint8_t IRRIGATION_CTRL_IsPHValid(void) {
+    return (PH_GetStatus() == SENSOR_OK);
+}
+
+uint8_t IRRIGATION_CTRL_IsECValid(void) {
+    return (EC_GetStatus() == SENSOR_OK);
+}
+
+uint8_t IRRIGATION_CTRL_CheckPH(void) {
+    return IRRIGATION_CTRL_IsPHInRange();
+}
+
+uint8_t IRRIGATION_CTRL_CheckEC(void) {
+    return IRRIGATION_CTRL_IsECInRange();
 }
 
 /**
@@ -193,6 +276,18 @@ uint8_t IRRIGATION_CTRL_IsParcelComplete(void) {
 }
 
 void IRRIGATION_CTRL_Start(void) {
+    if (ctrl.queue_size == 0U) {
+        for (uint8_t parcel_id = 1U; parcel_id <= VALVE_COUNT; parcel_id++) {
+            if (PARCELS_IsEnabled(parcel_id) != 0U) {
+                IRRIGATION_CTRL_AddToQueue(parcel_id);
+            }
+        }
+    }
+
+    if (ctrl.queue_size == 0U) {
+        return;
+    }
+
     ctrl.is_running = 1;
     ctrl.is_paused = 0;
     if (ctrl.state == CTRL_STATE_IDLE) {
@@ -206,6 +301,8 @@ void IRRIGATION_CTRL_Stop(void) {
     ctrl.state = CTRL_STATE_IDLE;
     ctrl.current_parcel.parcel_id = 0;
     ctrl.current_parcel.valve_id = 0;
+    ctrl.current_parcel.duration_sec = 0U;
+    IRRIGATION_CTRL_ClearQueue();
     VALVES_CloseAll();
 }
 
@@ -233,6 +330,51 @@ control_state_t IRRIGATION_CTRL_GetState(void) {
     return ctrl.state;
 }
 
+const char *IRRIGATION_CTRL_GetStateName(control_state_t state) {
+    switch (state) {
+        case CTRL_STATE_IDLE:
+            return "IDLE";
+        case CTRL_STATE_CHECKING_SENSORS:
+            return "CHECK";
+        case CTRL_STATE_PH_ADJUSTING:
+            return "PH";
+        case CTRL_STATE_EC_ADJUSTING:
+            return "EC";
+        case CTRL_STATE_MIXING:
+            return "MIX";
+        case CTRL_STATE_SETTLING:
+            return "SETTLE";
+        case CTRL_STATE_PARCEL_WATERING:
+            return "WATER";
+        case CTRL_STATE_WAITING:
+            return "WAIT";
+        case CTRL_STATE_ERROR:
+            return "ERROR";
+        case CTRL_STATE_EMERGENCY_STOP:
+            return "STOP";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+void IRRIGATION_CTRL_StartParcel(uint8_t parcel_id) {
+    IRRIGATION_CTRL_ClearQueue();
+    IRRIGATION_CTRL_AddToQueue(parcel_id);
+    ctrl.current_parcel.parcel_id = 0U;
+    ctrl.current_parcel.valve_id = 0U;
+    IRRIGATION_CTRL_Start();
+}
+
+void IRRIGATION_CTRL_StopParcel(void) {
+    if (ctrl.current_parcel.valve_id != 0U) {
+        VALVES_Close(ctrl.current_parcel.valve_id);
+    }
+
+    ctrl.current_parcel.parcel_id = 0U;
+    ctrl.current_parcel.valve_id = 0U;
+    ctrl.current_parcel.duration_sec = 0U;
+}
+
 uint8_t IRRIGATION_CTRL_GetCurrentParcelId(void) {
     return ctrl.current_parcel.parcel_id;
 }
@@ -251,6 +393,23 @@ uint32_t IRRIGATION_CTRL_GetRemainingTime(void) {
     }
 
     return ctrl.current_parcel.duration_sec - elapsed;
+}
+
+void IRRIGATION_CTRL_AddToQueue(uint8_t parcel_id) {
+    if (parcel_id == 0U || parcel_id > VALVE_COUNT || ctrl.queue_size >= VALVE_COUNT) {
+        return;
+    }
+
+    ctrl.parcel_queue[ctrl.queue_tail] = parcel_id;
+    ctrl.queue_tail = (ctrl.queue_tail + 1U) % VALVE_COUNT;
+    ctrl.queue_size++;
+}
+
+void IRRIGATION_CTRL_ClearQueue(void) {
+    memset(ctrl.parcel_queue, 0, sizeof(ctrl.parcel_queue));
+    ctrl.queue_head = 0U;
+    ctrl.queue_tail = 0U;
+    ctrl.queue_size = 0U;
 }
 
 void IRRIGATION_CTRL_EmergencyStop(void) {
