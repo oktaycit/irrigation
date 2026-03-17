@@ -1,0 +1,11 @@
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:25:6:TOUCH_Init	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:37:9:TOUCH_IsPressed	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:44:17:TOUCH_ReadRaw	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:62:16:TOUCH_ReadRawAvg	4
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:85:9:TOUCH_ReadPoint	9
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:132:6:TOUCH_CalibrationStart	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:136:6:TOUCH_SetCalibration	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:140:6:TOUCH_GetCalibration	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:144:6:TOUCH_LoadCalibration	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:149:6:TOUCH_SaveCalibration	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\touch_xpt2046.c:154:6:TOUCH_IRQHandler_Callback	1

@@ -1,0 +1,16 @@
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:67:6:HAL_MspInit	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:90:6:HAL_ADC_MspInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:125:6:HAL_ADC_MspDeInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:154:6:HAL_I2C_MspInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:191:6:HAL_I2C_MspDeInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:222:6:HAL_SPI_MspInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:260:6:HAL_SPI_MspDeInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:290:6:HAL_TIM_Base_MspInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:307:6:HAL_TIM_MspPostInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:339:6:HAL_TIM_Base_MspDeInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:361:6:HAL_UART_MspInit	4
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:441:6:HAL_UART_MspDeInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:473:13:HAL_FSMC_MspInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:530:6:HAL_NOR_MspInit	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:542:13:HAL_FSMC_MspDeInit	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\stm32f4xx_hal_msp.c:587:6:HAL_NOR_MspDeInit	1

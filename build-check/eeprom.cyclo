@@ -1,0 +1,8 @@
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:19:9:EEPROM_Init	4
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:44:9:EEPROM_ReadBuffer	2
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:55:9:EEPROM_WriteBuffer	4
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:86:9:EEPROM_LoadSystemParams	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:93:9:EEPROM_SaveSystemParams	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:102:6:EEPROM_Format	1
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:128:10:EEPROM_CalculateCRC	4
+C:\Users\oktay\Projeler\irrigation\Core\Src\eeprom.c:143:9:EEPROM_GetLastError	1

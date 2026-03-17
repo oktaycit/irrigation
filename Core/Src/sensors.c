@@ -43,9 +43,9 @@ static sensors_modbus_context_t h_modbus = {0};
 
 #if !SENSORS_INTERFACE_MODBUS
 static uint8_t SENSORS_ReadChannel(uint32_t channel, uint16_t *raw_value);
-#endif
 static void SENSORS_UpdatePHMeasurement(void);
 static void SENSORS_UpdateECMeasurement(void);
+#endif
 static uint8_t SENSORS_RunLinearCalibration(float *x_values, float *y_values,
                                             uint8_t points_count, float *slope,
                                             float *offset);
@@ -418,8 +418,8 @@ static uint8_t SENSORS_ReadChannel(uint32_t channel, uint16_t *raw_value) {
 }
 #endif
 
-static void SENSORS_UpdatePHMeasurement(void) {
 #if !SENSORS_INTERFACE_MODBUS
+static void SENSORS_UpdatePHMeasurement(void) {
     if (!SENSORS_ReadChannel(PH_ADC_CHANNEL, &h_sensors.ph.raw_adc)) {
         h_sensors.ph.status = SENSOR_ERROR;
         return;
@@ -430,11 +430,9 @@ static void SENSORS_UpdatePHMeasurement(void) {
 
     PH_Read(&h_sensors.ph);
     h_sensors.ph.last_read_time = HAL_GetTick();
-#endif
 }
 
 static void SENSORS_UpdateECMeasurement(void) {
-#if !SENSORS_INTERFACE_MODBUS
     if (!SENSORS_ReadChannel(EC_ADC_CHANNEL, &h_sensors.ec.raw_adc)) {
         h_sensors.ec.status = SENSOR_ERROR;
         return;
@@ -445,8 +443,8 @@ static void SENSORS_UpdateECMeasurement(void) {
 
     EC_Read(&h_sensors.ec);
     h_sensors.ec.last_read_time = HAL_GetTick();
-#endif
 }
+#endif
 
 static uint8_t SENSORS_RunLinearCalibration(float *x_values, float *y_values,
                                             uint8_t points_count, float *slope,

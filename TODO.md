@@ -51,14 +51,18 @@ Durum ozeti: Proje derlenebilir firmware prototipi asamasinda. Hedef, 2026-03-23
 ## Oncelik Sirasi
 
 ### P1
-- [ ] GUI temel akislarini tamamla
 - [ ] Sulama algoritmasini non-blocking hale getir
+- [ ] Emergency stop ve hata state gecislerini tek bir tutarli akis haline getir
+- [ ] Parcel queue / siradaki parsel akisini tamamla ve otomatik modda en az 1 tam donguyu calistir
+- [ ] GUI temel akislarini tamamla
 - [ ] Kart uzerinde temel donanim dogrulamasini yap
 
 ### P2
 - [ ] EEPROM kaliciligini saglamlastir
 - [ ] Hata yonetimi ve guvenli kapanis akislarini tamamla
 - [ ] Sensor hata senaryolarini test et
+- [ ] Touch kalibrasyonunu EEPROM ile yukle/kaydet akisi ile tamamla
+- [ ] README ve TODO durumunu senkron tut
 
 ### P3
 - [ ] Font ve gorsel iyilestirmeleri yap
@@ -80,3 +84,7 @@ Durum ozeti: Proje derlenebilir firmware prototipi asamasinda. Hedef, 2026-03-23
 - [ ] GUI cizimlerini tekrarli full redraw yerine daha kontrollu guncelle
 - [ ] Sensor katmaninda kullanilmayan fonksiyon ve warning'leri temizle
 - [ ] `.ioc` dosyasini repoya ekleme kararini netlestir
+- [ ] `CTRL_STATE_ERROR` ve `CTRL_STATE_EMERGENCY_STOP` akislarini teklestir
+- [ ] `IRRIGATION_CTRL_AddToQueue` / queue doldurma ve bosaltma akislarini netlestir
+- [ ] EEPROM load sirasinda CRC ve versiyon dogrulamasini zorunlu hale getir
+- [ ] Touch kalibrasyon stub fonksiyonlarini gercek implementasyona cevir
