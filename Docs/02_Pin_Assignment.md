@@ -7,7 +7,7 @@
 | FSMC (TFT LCD) | 23 | PD0-PD15, PE0-PE2, PD4, PD5, PD11-PD13 |
 | Touch SPI | 4 | PA5-PA7, PB10 |
 | ADC (pH, EC) | 2 | PA0, PA1 |
-| Vana Kontrol | 8 | PB0-PB7 |
+| Vana Kontrol | 8 | PA2-PA4, PC0-PC4 |
 | I2C (EEPROM) | 2 | PB8, PB9 |
 | USART (Debug) | 2 | PA9, PA10 |
 | 1-Wire (Temp) | 1 | PB12 |
@@ -44,7 +44,7 @@
 | LCD | STM32F407VET6 | Pin No | Açıklama |
 |-----|---------------|--------|----------|
 | CS/CE | PD7 | 88 | FSMC_NE1 - Chip Select |
-| RS/A0 | PD11 | 81 | FSMC_A16 - Register Select |
+| RS/A0 | PD13 | 84 | FSMC_A18 - Register Select |
 | WR | PD5 | 82 | FSMC_NWE - Write Enable |
 | RD | PD4 | 81 | FSMC_NOE - Output Enable |
 | RST | PE2 | 96 | GPIO - Reset (yazılımsal) |
@@ -58,7 +58,7 @@
 | PD4 | AF12 | FSMC_NOE |
 | PD5 | AF12 | FSMC_NWE |
 | PD7 | AF12 | FSMC_NE1 |
-| PD11 | AF12 | FSMC_A16 |
+| PD13 | AF12 | FSMC_A18 |
 
 ---
 
@@ -119,14 +119,17 @@ EC Değeri = ADC × (20.0 / 4095) × Kalibrasyon_Katsayısı
 
 | Vana No | STM32 Pin | Pin No | GPIO Mode | Açıklama |
 |---------|-----------|--------|-----------|----------|
-| Vana 1 | PB0 | 29 | Output Push-Pull | Parsel 1 |
-| Vana 2 | PB1 | 30 | Output Push-Pull | Parsel 2 |
-| Vana 3 | PB2 | 31 | Output Push-Pull | Parsel 3 |
-| Vana 4 | PB3 | 32 | Output Push-Pull | Parsel 4 |
-| Vana 5 | PB4 | 33 | Output Push-Pull | Parsel 5 |
-| Vana 6 | PB5 | 34 | Output Push-Pull | Parsel 6 |
-| Vana 7 | PB6 | 35 | Output Push-Pull | Parsel 7 |
-| Vana 8 | PB7 | 36 | Output Push-Pull | Parsel 8 |
+| Vana 1 | PA2 | 12 | Output Push-Pull | Parsel 1 |
+| Vana 2 | PA3 | 13 | Output Push-Pull | Parsel 2 |
+| Vana 3 | PA4 | 14 | Output Push-Pull | Parsel 3 |
+| Vana 4 | PC0 | 15 | Output Push-Pull | Parsel 4 |
+| Vana 5 | PC1 | 16 | Output Push-Pull | Parsel 5 |
+| Vana 6 | PC2 | 17 | Output Push-Pull | Parsel 6 |
+| Vana 7 | PC3 | 18 | Output Push-Pull | Parsel 7 |
+| Vana 8 | PC4 | 24 | Output Push-Pull | Parsel 8 |
+
+Not:
+`PB0`, `PB3`, `PB4`, `PB5` pinleri kart üzerindeki `U3 / W25Q16JV` SPI flash icin ayrildi.
 
 #### Vana Sürücü Devresi
 ```
@@ -237,27 +240,44 @@ Röle COM → Güç Kaynağı
 ### Kullanılan GPIO'lar - Port B
 | Pin | Fonksiyon | Mode | AF |
 |-----|-----------|------|-----|
-| PB0 | Vana1 | Output PP | - |
-| PB1 | Vana2 | Output PP | - |
-| PB2 | Vana3 | Output PP | - |
-| PB3 | Vana4 | Output PP | - |
-| PB4 | Vana5 | Output PP | - |
-| PB5 | Vana6 | Output PP | - |
-| PB6 | Vana7 / I2C1_SCL | Output PP / AF_OD | AF4 |
-| PB7 | Vana8 / I2C1_SDA | Output PP / AF_OD | AF4 |
+| PB0 | U3 Flash /CS | AF/GPIO | - |
+| PB1 | LCD_BL | Output PP | - |
+| PB3 | U3 Flash CLK | AF5 | SPI1_SCK |
+| PB4 | U3 Flash DO | AF5 | SPI1_MISO |
+| PB5 | U3 Flash DI | AF5 | SPI1_MOSI |
 | PB8 | I2C1_SCL | AF_OD | AF4 |
 | PB9 | I2C1_SDA | AF_OD | AF4 |
 | PB10 | Touch CS | Output PP | - |
+| PB11 | RS485 DE | Output PP | - |
 | PB12 | 1-Wire DATA | Output OD | - |
-
-⚠️ **NOT:** PB6/PB7 hem vana hem I2C için kullanılamaz. I2C için PB8/PB9 kullanılacak, vanalar PB0-PB7 olarak kalacak.
 
 ### Kullanılan GPIO'lar - Port C
 | Pin | Fonksiyon | Mode | AF |
 |-----|-----------|------|-----|
+| PC0 | Vana4 | Output PP | - |
+| PC1 | Vana5 | Output PP | - |
+| PC2 | Vana6 | Output PP | - |
+| PC3 | Vana7 | Output PP | - |
+| PC4 | Vana8 | Output PP | - |
 | PC13 | LED_PWR | Output PP | - |
 | PC14 | LED_ERR | Output PP | - |
 | PC15 | Touch IRQ | Input PU | - |
+
+### Kullanılan GPIO'lar - Port A
+| Pin | Fonksiyon | Mode | AF |
+|-----|-----------|------|-----|
+| PA0 | ADC1_IN0 (pH) | Analog | - |
+| PA1 | ADC1_IN1 (EC) | Analog | - |
+| PA2 | Vana1 | Output PP | - |
+| PA3 | Vana2 | Output PP | - |
+| PA4 | Vana3 | Output PP | - |
+| PA5 | SPI1_SCK / Touch dok. referans | AF_PP | AF5 |
+| PA6 | User LED 1 | Output/board use | - |
+| PA7 | User LED 2 | Output/board use | - |
+| PA8 | TIM1_CH1 (BL PWM) | AF_PP | AF1 |
+| PA9 | USART1_TX | AF_PP | AF7 |
+| PA10 | USART1_RX | AF_PP | AF7 |
+| PA15 | TIM2_CH1 (Buzzer) | AF_PP | AF1 |
 
 ### Kullanılan GPIO'lar - Port D (FSMC)
 | Pin | Fonksiyon | Mode | AF |

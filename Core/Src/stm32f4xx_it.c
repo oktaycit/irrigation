@@ -55,12 +55,18 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern DMA_HandleTypeDef hdma_adc1;
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
+extern TIM_HandleTypeDef htim3;
+extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 extern UART_HandleTypeDef huart1;
+/* Stubbed - RTC driver not available */
+/* extern RTC_HandleTypeDef hrtc; */
 
 /* USER CODE BEGIN EV */
-
+/* External touch handler */
+extern void TOUCH_IRQHandler_Callback(void);
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -202,6 +208,22 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles DMA2 stream0 global interrupt.
+  */
+void DMA2_Stream0_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_adc1);
+}
+
+/**
+  * @brief This function handles TIM3 global interrupt.
+  */
+void TIM3_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&htim3);
+}
+
+/**
   * @brief This function handles DMA2 stream2 global interrupt.
   */
 void DMA2_Stream2_IRQHandler(void)
@@ -223,6 +245,35 @@ void DMA2_Stream7_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
   HAL_UART_IRQHandler(&huart1);
+}
+
+/**
+  * @brief This function handles USB OTG FS global interrupt.
+  */
+void OTG_FS_IRQHandler(void)
+{
+  HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
+}
+
+/**
+ * @brief This function handles EXTI Line[9:5] Interrupts (Touch IRQ)
+ */
+void EXTI9_5_IRQHandler(void)
+{
+  /* Check if touch IRQ flag is set */
+  if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_5) != RESET)
+  {
+    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_5);
+    TOUCH_IRQHandler_Callback();
+  }
+}
+
+/**
+  * @brief This function handles RTC Alarm interrupt
+  */
+void RTC_Alarm_IRQHandler(void)
+{
+  RTC_ProcessAlarmIRQ();
 }
 
 /* USER CODE BEGIN 1 */

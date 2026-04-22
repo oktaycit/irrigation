@@ -13,6 +13,12 @@
 static valve_t g_valves[VALVE_COUNT];
 static parcel_t g_parcels[VALVE_COUNT];
 static irrigation_status_t g_irrigation_status = {0};
+static GPIO_TypeDef *const g_valve_ports[VALVE_COUNT] = {
+    VALVE_1_PORT, VALVE_2_PORT, VALVE_3_PORT, VALVE_4_PORT,
+    VALVE_5_PORT, VALVE_6_PORT, VALVE_7_PORT, VALVE_8_PORT};
+static const uint16_t g_valve_pins[VALVE_COUNT] = {
+    VALVE_1_PIN, VALVE_2_PIN, VALVE_3_PIN, VALVE_4_PIN,
+    VALVE_5_PIN, VALVE_6_PIN, VALVE_7_PIN, VALVE_8_PIN};
 
 /* Private Function Prototypes */
 static void VALVES_UpdateState(uint8_t id, valve_state_t new_state);
@@ -44,10 +50,7 @@ void VALVES_Open(uint8_t valve_id) {
     if (valve_id == 0 || valve_id > VALVE_COUNT) return;
     uint8_t idx = valve_id - 1;
 
-    uint16_t pins[] = {VALVE_1_PIN, VALVE_2_PIN, VALVE_3_PIN, VALVE_4_PIN,
-                       VALVE_5_PIN, VALVE_6_PIN, VALVE_7_PIN, VALVE_8_PIN};
-
-    HAL_GPIO_WritePin(VALVE_PORT, pins[idx], GPIO_PIN_SET);
+    HAL_GPIO_WritePin(g_valve_ports[idx], g_valve_pins[idx], GPIO_PIN_SET);
     VALVES_UpdateState(valve_id, VALVE_STATE_OPEN);
     
     g_valves[idx].cycle_count++;
@@ -61,10 +64,7 @@ void VALVES_Close(uint8_t valve_id) {
     if (valve_id == 0 || valve_id > VALVE_COUNT) return;
     uint8_t idx = valve_id - 1;
 
-    uint16_t pins[] = {VALVE_1_PIN, VALVE_2_PIN, VALVE_3_PIN, VALVE_4_PIN,
-                       VALVE_5_PIN, VALVE_6_PIN, VALVE_7_PIN, VALVE_8_PIN};
-
-    HAL_GPIO_WritePin(VALVE_PORT, pins[idx], GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(g_valve_ports[idx], g_valve_pins[idx], GPIO_PIN_RESET);
     VALVES_UpdateState(valve_id, VALVE_STATE_CLOSED);
 
     if (g_valves[idx].last_action_time > 0) {
@@ -172,6 +172,7 @@ void VALVES_Update(void) {
 static void VALVES_UpdateState(uint8_t id, valve_state_t new_state) {
     if (id == 0 || id > VALVE_COUNT) return;
     g_valves[id - 1].state = new_state;
+    GUI_UpdateValveStatus(id, (new_state == VALVE_STATE_OPEN) ? 1U : 0U);
 }
 
 /* Parcel Management */

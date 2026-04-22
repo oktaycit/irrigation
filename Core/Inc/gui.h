@@ -36,6 +36,11 @@ typedef enum {
   SCREEN_SYSTEM_INFO,     /* Sistem Bilgisi */
   SCREEN_SPLASH,          /* Açılış Ekranı */
   SCREEN_WARNING,         /* Uyarı Ekranı */
+  SCREEN_PROGRAMS,        /* Program Listesi */
+  SCREEN_PROGRAM_EDIT,    /* Program Düzenleme */
+  SCREEN_RTC_SETTINGS,    /* RTC Ayarlari */
+  SCREEN_AUTO_MODE,       /* Otomatik Mod */
+  SCREEN_ALARMS,          /* Alarm Ekrani */
   SCREEN_MAX
 } screen_id_t;
 

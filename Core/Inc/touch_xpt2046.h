@@ -17,12 +17,12 @@ extern "C" {
 #include <stdint.h>
 
 /* Touch Configuration ------------------------------------------------------*/
-#define TOUCH_SPI SPI1
-#define TOUCH_CS_PIN GPIO_PIN_10
+#define TOUCH_SPI SPI2
+#define TOUCH_CS_PIN GPIO_PIN_12
 #define TOUCH_CS_PORT GPIOB
-#define TOUCH_IRQ_PIN GPIO_PIN_15
+#define TOUCH_IRQ_PIN GPIO_PIN_5
 #define TOUCH_IRQ_PORT GPIOC
-#define TOUCH_IRQ_EXTI EXTI15_10_IRQn
+#define TOUCH_IRQ_EXTI EXTI9_5_IRQn
 
 /* Touch Threshold ----------------------------------------------------------*/
 #define TOUCH_THRESHOLD 800U /* Touch detection threshold */
@@ -52,12 +52,13 @@ typedef struct {
 
 /* Calibration Data Structure -----------------------------------------------*/
 typedef struct {
-  int32_t a; /* X scale */
-  int32_t b; /* Y scale */
-  int32_t c; /* X offset */
-  int32_t d; /* Y offset */
-  int32_t e; /* X divider */
-  int32_t f; /* Y divider */
+  int32_t x_min;
+  int32_t x_max;
+  int32_t y_min;
+  int32_t y_max;
+  uint8_t swap_xy;
+  uint8_t invert_x;
+  uint8_t invert_y;
   uint8_t valid;
 } touch_calibration_t;
 
@@ -68,6 +69,8 @@ uint8_t TOUCH_ReadPoint(touch_point_t *point);
 void TOUCH_GetPoint(touch_point_t *point);
 void TOUCH_CalibrationStart(void);
 uint8_t TOUCH_CalibrationProcess(uint16_t *x, uint16_t *y, uint8_t *step);
+uint8_t TOUCH_IsCalibrating(void);
+uint8_t TOUCH_GetCalibrationStep(void);
 void TOUCH_SetCalibration(const touch_calibration_t *cal);
 void TOUCH_GetCalibration(touch_calibration_t *cal);
 void TOUCH_SaveCalibration(void);

@@ -8,6 +8,10 @@
 #include "main.h"
 #include <string.h>
 
+/* External DMA buffer from main.c */
+extern volatile uint16_t g_adc_dma_buffer[ADC_DMA_BUFFER_SIZE];
+extern volatile uint8_t g_adc_conversion_complete;
+
 #if SENSORS_INTERFACE_MODBUS
 extern UART_HandleTypeDef huart1;
 #else
@@ -17,6 +21,11 @@ extern ADC_HandleTypeDef hadc1;
 /* Sensor Handle */
 static sensors_handle_t h_sensors = {0};
 static uint32_t g_last_poll_time = 0;
+
+#if BOARD_SENSOR_DEMO_MODE
+static void SENSORS_UpdateDemoMeasurements(void);
+#define SENSORS_DEMO_INTERVAL_MS 1000U
+#endif
 
 #if SENSORS_INTERFACE_MODBUS
 #define SENSORS_MODBUS_MAX_RESPONSE_SIZE 16U
@@ -42,7 +51,6 @@ static sensors_modbus_context_t h_modbus = {0};
 #endif
 
 #if !SENSORS_INTERFACE_MODBUS
-static uint8_t SENSORS_ReadChannel(uint32_t channel, uint16_t *raw_value);
 static void SENSORS_UpdatePHMeasurement(void);
 static void SENSORS_UpdateECMeasurement(void);
 #endif
@@ -51,7 +59,7 @@ static uint8_t SENSORS_RunLinearCalibration(float *x_values, float *y_values,
                                             float *offset);
 
 #if SENSORS_INTERFACE_MODBUS
-static void SENSORS_ModbusInitInterface(void);
+static void SENSORS_ModbusInitInterface(void) __attribute__((unused));
 static void SENSORS_ModbusSetDirection(GPIO_PinState state);
 static void SENSORS_ModbusFlushRx(void);
 static uint16_t SENSORS_ModbusCRC16(const uint8_t *data, uint16_t length);
@@ -73,7 +81,12 @@ void SENSORS_Init(void) {
     h_sensors.ph.temperature = TEMP_REFERENCE;
     h_sensors.ec.temperature = TEMP_REFERENCE;
 
-#if SENSORS_INTERFACE_MODBUS
+#if BOARD_SENSOR_DEMO_MODE
+    h_sensors.ph.is_calibrated = 1U;
+    h_sensors.ec.is_calibrated = 1U;
+    g_last_poll_time = 0U;
+    SENSORS_UpdateDemoMeasurements();
+#elif SENSORS_INTERFACE_MODBUS
     memset(&h_modbus, 0, sizeof(h_modbus));
     SENSORS_ModbusInitInterface();
     g_last_poll_time = 0;
@@ -97,7 +110,9 @@ void SENSORS_StartContinuous(void) {
  * @brief  Stop continuous reading
  */
 void SENSORS_StopContinuous(void) {
-#if !SENSORS_INTERFACE_MODBUS
+#if BOARD_SENSOR_DEMO_MODE
+    return;
+#elif !SENSORS_INTERFACE_MODBUS
     HAL_ADC_Stop(&hadc1);
 #else
     SENSORS_ModbusSetDirection(SENSORS_RS485_RX_ACTIVE);
@@ -109,6 +124,16 @@ void SENSORS_StopContinuous(void) {
  */
 void SENSORS_Process(void) {
     uint32_t now = HAL_GetTick();
+
+#if BOARD_SENSOR_DEMO_MODE
+    if ((now - g_last_poll_time) < SENSORS_DEMO_INTERVAL_MS) {
+        return;
+    }
+
+    g_last_poll_time = now;
+    SENSORS_UpdateDemoMeasurements();
+    return;
+#endif
 
 #if SENSORS_INTERFACE_MODBUS
     if (h_modbus.active_query != SENSORS_MODBUS_QUERY_NONE) {
@@ -133,6 +158,7 @@ void SENSORS_Process(void) {
 #if SENSORS_INTERFACE_MODBUS
     SENSORS_ModbusScheduleCycle();
 #else
+    /* Use DMA buffer data for ADC mode - no blocking, data is always fresh */
     SENSORS_UpdateECMeasurement();
     SENSORS_UpdatePHMeasurement();
 #endif
@@ -363,6 +389,46 @@ float SENSORS_GetTemperature(void) {
     return h_sensors.ec.temperature;
 }
 
+uint32_t PH_GetLastReadTime(void) {
+    return h_sensors.ph.last_read_time;
+}
+
+uint32_t EC_GetLastReadTime(void) {
+    return h_sensors.ec.last_read_time;
+}
+
+#if BOARD_SENSOR_DEMO_MODE
+static void SENSORS_UpdateDemoMeasurements(void) {
+    static const float ph_profile[] = {4.44f, 5.55f, 6.66f, 7.77f, 8.88f};
+    static const float ec_profile[] = {0.44f, 1.11f, 2.22f, 3.33f, 4.44f};
+    static uint8_t demo_index = 0U;
+
+    h_sensors.ph.ph_value = ph_profile[demo_index];
+    h_sensors.ph.raw_voltage = (h_sensors.ph.ph_value / 14.0f) * ADC_REF_VOLTAGE;
+    h_sensors.ph.raw_adc =
+        (uint16_t)((h_sensors.ph.raw_voltage * (float)ADC_MAX_VALUE) / ADC_REF_VOLTAGE);
+    h_sensors.ph.status = SENSOR_OK;
+    h_sensors.ph.last_read_time = HAL_GetTick();
+
+    h_sensors.ec.ec_value = ec_profile[demo_index];
+    h_sensors.ec.raw_voltage = (h_sensors.ec.ec_value / 20.0f) * ADC_REF_VOLTAGE;
+    h_sensors.ec.raw_adc =
+        (uint16_t)((h_sensors.ec.raw_voltage * (float)ADC_MAX_VALUE) / ADC_REF_VOLTAGE);
+    h_sensors.ec.status = SENSOR_OK;
+    h_sensors.ec.last_read_time = HAL_GetTick();
+    h_sensors.ec.temperature = TEMP_REFERENCE + 0.5f;
+    h_sensors.ph.temperature = h_sensors.ec.temperature;
+
+    GUI_UpdatePHValue(h_sensors.ph.ph_value);
+    GUI_UpdateECValue(h_sensors.ec.ec_value);
+
+    demo_index++;
+    if (demo_index >= (sizeof(ph_profile) / sizeof(ph_profile[0]))) {
+        demo_index = 0U;
+    }
+}
+#endif
+
 uint16_t SENSORS_FilterADC(uint16_t new_value) {
     h_sensors.adc_buffer[h_sensors.buffer_index] = new_value;
     h_sensors.buffer_index = (uint8_t)((h_sensors.buffer_index + 1U) % FILTER_SAMPLES);
@@ -389,60 +455,44 @@ float SENSORS_MovingAverage(float *buffer, uint8_t size) {
 }
 
 void SENSORS_ADC_CompleteCallback(void) {
-    /* Reserved for future DMA based implementations. */
+    /* DMA conversion complete - data ready in g_adc_dma_buffer */
 }
 
 #if !SENSORS_INTERFACE_MODBUS
-static uint8_t SENSORS_ReadChannel(uint32_t channel, uint16_t *raw_value) {
-    ADC_ChannelConfTypeDef sConfig = {0};
-
-    sConfig.Channel = channel;
-    sConfig.Rank = 1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_144CYCLES;
-    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) {
-        return 0;
-    }
-
-    if (HAL_ADC_Start(&hadc1) != HAL_OK) {
-        return 0;
-    }
-
-    if (HAL_ADC_PollForConversion(&hadc1, 10U) != HAL_OK) {
-        HAL_ADC_Stop(&hadc1);
-        return 0;
-    }
-
-    *raw_value = (uint16_t)HAL_ADC_GetValue(&hadc1);
-    HAL_ADC_Stop(&hadc1);
-    return 1;
-}
-#endif
-
-#if !SENSORS_INTERFACE_MODBUS
+/**
+ * @brief  Update pH measurement from DMA buffer (non-blocking)
+ */
 static void SENSORS_UpdatePHMeasurement(void) {
-    if (!SENSORS_ReadChannel(PH_ADC_CHANNEL, &h_sensors.ph.raw_adc)) {
-        h_sensors.ph.status = SENSOR_ERROR;
-        return;
-    }
-
+    /* Read from DMA circular buffer - channel 0 (PA0/ADC1_IN0) */
+    h_sensors.ph.raw_adc = g_adc_dma_buffer[0];
+    
+    /* Apply moving average filter */
+    h_sensors.ph.raw_adc = SENSORS_FilterADC(h_sensors.ph.raw_adc);
+    
     h_sensors.ph.raw_voltage =
         (float)h_sensors.ph.raw_adc * ADC_REF_VOLTAGE / ADC_MAX_VALUE;
 
     PH_Read(&h_sensors.ph);
     h_sensors.ph.last_read_time = HAL_GetTick();
+    GUI_UpdatePHValue(h_sensors.ph.ph_value);
 }
 
+/**
+ * @brief  Update EC measurement from DMA buffer (non-blocking)
+ */
 static void SENSORS_UpdateECMeasurement(void) {
-    if (!SENSORS_ReadChannel(EC_ADC_CHANNEL, &h_sensors.ec.raw_adc)) {
-        h_sensors.ec.status = SENSOR_ERROR;
-        return;
-    }
-
+    /* Read from DMA circular buffer - channel 1 (PA1/ADC1_IN1) */
+    h_sensors.ec.raw_adc = g_adc_dma_buffer[1];
+    
+    /* Apply moving average filter */
+    h_sensors.ec.raw_adc = SENSORS_FilterADC(h_sensors.ec.raw_adc);
+    
     h_sensors.ec.raw_voltage =
         (float)h_sensors.ec.raw_adc * ADC_REF_VOLTAGE / ADC_MAX_VALUE;
 
     EC_Read(&h_sensors.ec);
     h_sensors.ec.last_read_time = HAL_GetTick();
+    GUI_UpdateECValue(h_sensors.ec.ec_value);
 }
 #endif
 
@@ -714,6 +764,7 @@ static uint8_t SENSORS_ModbusProcessResponse(sensors_modbus_query_t query_type) 
         h_sensors.ph.temperature = h_sensors.ec.temperature;
         EC_Read(&h_sensors.ec);
         h_sensors.ec.last_read_time = HAL_GetTick();
+        GUI_UpdateECValue(h_sensors.ec.ec_value);
     } else {
         h_sensors.ph.raw_adc =
             (uint16_t)((uint16_t)h_modbus.rx_buffer[3] << 8U) |
@@ -722,6 +773,7 @@ static uint8_t SENSORS_ModbusProcessResponse(sensors_modbus_query_t query_type) 
         h_sensors.ph.ph_value = (float)h_sensors.ph.raw_adc / PH_SENSOR_MODBUS_SCALE;
         PH_Read(&h_sensors.ph);
         h_sensors.ph.last_read_time = HAL_GetTick();
+        GUI_UpdatePHValue(h_sensors.ph.ph_value);
     }
 
     return SENSOR_OK;

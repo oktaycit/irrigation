@@ -1,0 +1,37 @@
+{
+  "ai": {
+    "models": {
+      "codeAssistant": {
+        "enabled": true,
+        "context": "embedded",
+        "specialization": "stm32"
+      },
+      "codeReview": {
+        "enabled": true,
+        "autoReview": true
+      },
+      "documentation": {
+        "enabled": true,
+        "language": "en"
+      }
+    },
+    "features": {
+      "autocomplete": true,
+      "inlineSuggestions": true,
+      "errorExplanation": true,
+      "refactoring": true,
+      "testGeneration": true
+    },
+    "context": {
+      "includeHeaders": true,
+      "includeDatasheets": true,
+      "maxContextFiles": 50
+    }
+  },
+  "project": {
+    "type": "embedded",
+    "platform": "STM32F407VET6",
+    "language": "C",
+    "ide": "STM32CubeIDE"
+  }
+}

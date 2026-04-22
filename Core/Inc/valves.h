@@ -20,15 +20,22 @@ extern "C" {
 #define VALVE_COUNT 8U
 
 /* Vana GPIO Pins -----------------------------------------------------------*/
-#define VALVE_1_PIN GPIO_PIN_0
-#define VALVE_2_PIN GPIO_PIN_1
-#define VALVE_3_PIN GPIO_PIN_2
-#define VALVE_4_PIN GPIO_PIN_3
-#define VALVE_5_PIN GPIO_PIN_4
-#define VALVE_6_PIN GPIO_PIN_5
-#define VALVE_7_PIN GPIO_PIN_6
-#define VALVE_8_PIN GPIO_PIN_7
-#define VALVE_PORT GPIOB
+#define VALVE_1_PIN GPIO_PIN_2
+#define VALVE_1_PORT GPIOA
+#define VALVE_2_PIN GPIO_PIN_3
+#define VALVE_2_PORT GPIOA
+#define VALVE_3_PIN GPIO_PIN_4
+#define VALVE_3_PORT GPIOA
+#define VALVE_4_PIN GPIO_PIN_0
+#define VALVE_4_PORT GPIOC
+#define VALVE_5_PIN GPIO_PIN_1
+#define VALVE_5_PORT GPIOC
+#define VALVE_6_PIN GPIO_PIN_2
+#define VALVE_6_PORT GPIOC
+#define VALVE_7_PIN GPIO_PIN_3
+#define VALVE_7_PORT GPIOC
+#define VALVE_8_PIN GPIO_PIN_4
+#define VALVE_8_PORT GPIOC
 
 /* Vana Status --------------------------------------------------------------*/
 #define VALVE_STATUS_OFF 0U

@@ -15,12 +15,15 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include <stdbool.h>
 #include <stdint.h>
+#include "irrigation_control.h"
+#include "touch_xpt2046.h"
 
 /* EEPROM Configuration -----------------------------------------------------*/
 #define EEPROM_I2C I2C1
 #define EEPROM_ADDRESS 0x50U     /* 24C256 I2C Address */
 #define EEPROM_PAGE_SIZE 64U     /* 64 Byte page size */
 #define EEPROM_TOTAL_SIZE 32768U /* 32 KBit = 4 KByte */
+#define EEPROM_SYSTEM_MODE_MARKER 0xA5U
 
 /* EEPROM Memory Map --------------------------------------------------------*/
 /* Sayfa 0-1: Magic Number ve Versiyon */
@@ -39,11 +42,20 @@ extern "C" {
 /* Sayfa 12-15: Parsel Ayarları (8 parsel x 16 byte) */
 #define EEPROM_ADDR_PARCELS 0x0300U
 
+/* Sayfa 20-23: Sulama Programlari */
+#define EEPROM_ADDR_PROGRAMS 0x0500U
+
+/* Sayfa 24-25: Runtime Backup */
+#define EEPROM_ADDR_RUNTIME_BACKUP 0x0600U
+
 /* Sayfa 16-31: Sulama Logları (dairesel buffer) */
 #define EEPROM_ADDR_LOGS 0x0800U
 
 /* Sayfa 32-47: Yedek Alan */
 #define EEPROM_ADDR_SPARE 0x1000U
+
+/* Sayfa 33: Touch kalibrasyon */
+#define EEPROM_ADDR_TOUCH_CAL 0x1080U
 
 /* EEPROM Status ------------------------------------------------------------*/
 #define EEPROM_OK 0U
@@ -118,6 +130,19 @@ typedef struct {
   uint8_t flags;
 } eeprom_log_entry_t;
 
+typedef struct {
+  touch_calibration_t calibration;
+  uint16_t crc;
+} eeprom_touch_cal_t;
+
+typedef struct {
+  irrigation_program_t program;
+} eeprom_program_t;
+
+typedef struct {
+  irrigation_runtime_backup_t backup;
+} eeprom_runtime_backup_t;
+
 /* EEPROM Handle ------------------------------------------------------------*/
 typedef struct {
   uint8_t initialized;
@@ -142,18 +167,32 @@ void EEPROM_WaitReady(void);
 uint8_t EEPROM_LoadSystemParams(void);
 uint8_t EEPROM_SaveSystemParams(void);
 uint8_t EEPROM_ResetSystemParams(void);
+uint8_t EEPROM_GetSystemParams(eeprom_system_t *system);
+uint8_t EEPROM_SetSystemParams(const eeprom_system_t *system);
 
 /* Calibration Functions ----------------------------------------------------*/
 uint8_t EEPROM_LoadPHCalibration(void);
 uint8_t EEPROM_SavePHCalibration(void);
 uint8_t EEPROM_LoadECCalibration(void);
 uint8_t EEPROM_SaveECCalibration(void);
+uint8_t EEPROM_LoadTouchCalibration(touch_calibration_t *cal);
+uint8_t EEPROM_SaveTouchCalibration(const touch_calibration_t *cal);
 
 /* Parcel Functions ---------------------------------------------------------*/
 uint8_t EEPROM_LoadParcel(uint8_t parcel_id);
 uint8_t EEPROM_SaveParcel(uint8_t parcel_id);
 uint8_t EEPROM_LoadAllParcels(void);
 uint8_t EEPROM_SaveAllParcels(void);
+
+/* Program Functions --------------------------------------------------------*/
+uint8_t EEPROM_LoadProgram(uint8_t program_id, irrigation_program_t *program);
+uint8_t EEPROM_SaveProgram(uint8_t program_id,
+                           const irrigation_program_t *program);
+uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count);
+uint8_t EEPROM_SaveRuntimeBackup(
+    const irrigation_runtime_backup_t *runtime_backup);
+uint8_t EEPROM_LoadRuntimeBackup(irrigation_runtime_backup_t *runtime_backup);
+uint8_t EEPROM_ClearRuntimeBackup(void);
 
 /* Log Functions ------------------------------------------------------------*/
 uint8_t EEPROM_WriteLog(eeprom_log_entry_t *entry);

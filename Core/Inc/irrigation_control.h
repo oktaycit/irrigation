@@ -39,6 +39,14 @@ typedef enum {
   CTRL_STATE_EMERGENCY_STOP
 } control_state_t;
 
+typedef enum {
+  PROGRAM_STATE_IDLE = 0,
+  PROGRAM_STATE_VALVE_ACTIVE,
+  PROGRAM_STATE_WAITING,
+  PROGRAM_STATE_NEXT_VALVE,
+  PROGRAM_STATE_ERROR
+} program_state_t;
+
 /* Hata Kodları -------------------------------------------------------------*/
 typedef enum {
   ERR_NONE = 0,
@@ -228,9 +236,54 @@ typedef struct {
   uint8_t parcel_id;
 } irrigation_schedule_t;
 
+typedef struct {
+  uint8_t enabled;
+  uint16_t start_hhmm;
+  uint16_t end_hhmm;
+  uint8_t valve_mask;
+  uint16_t irrigation_min;
+  uint16_t wait_min;
+  uint8_t repeat_count;
+  uint8_t days_mask;
+  int16_t ec_set_x100;
+  int16_t ph_set_x100;
+  uint16_t last_run_day;
+  uint16_t last_run_minute;
+  uint8_t reserved[4];
+  uint16_t crc;
+} irrigation_program_t;
+
+typedef struct {
+  uint8_t valid;
+  uint8_t active_program_id;
+  uint8_t active_valve_index;
+  uint8_t repeat_index;
+  uint8_t program_state;
+  uint8_t active_valve_id;
+  uint16_t remaining_sec;
+  int16_t ec_target_x100;
+  int16_t ph_target_x100;
+  uint8_t error_code;
+  uint8_t reserved[5];
+  uint16_t crc;
+} irrigation_runtime_backup_t;
+
 void IRRIGATION_CTRL_SetSchedule(uint8_t slot, irrigation_schedule_t *sched);
 void IRRIGATION_CTRL_GetSchedule(uint8_t slot, irrigation_schedule_t *sched);
 void IRRIGATION_CTRL_CheckSchedules(void);
+void IRRIGATION_CTRL_StartProgram(uint8_t program_id);
+void IRRIGATION_CTRL_CancelProgram(void);
+uint8_t IRRIGATION_CTRL_GetActiveProgram(void);
+program_state_t IRRIGATION_CTRL_GetProgramState(void);
+void IRRIGATION_CTRL_GetProgram(uint8_t program_id, irrigation_program_t *program);
+void IRRIGATION_CTRL_SetProgram(uint8_t program_id,
+                                const irrigation_program_t *program);
+void IRRIGATION_CTRL_LoadPrograms(void);
+void IRRIGATION_CTRL_LoadRuntimeBackup(void);
+void IRRIGATION_CTRL_MaintenanceTask(void);
+uint8_t IRRIGATION_CTRL_RunSafetyChecks(void);
+const char *IRRIGATION_CTRL_GetActiveAlarmText(void);
+void IRRIGATION_CTRL_GetRuntimeBackup(irrigation_runtime_backup_t *backup);
 
 /* Callbacks ----------------------------------------------------------------*/
 void IRRIGATION_CTRL_OnStateChange(control_state_t old_state,

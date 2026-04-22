@@ -94,17 +94,20 @@ extern "C" {
 /* FSMC Bank Address --------------------------------------------------------*/
 #define LCD_BASE_ADDR 0x60000000U
 #define LCD_CMD_REG (*(volatile uint16_t *)(LCD_BASE_ADDR + 0x00000000U))
-#define LCD_DATA_REG (*(volatile uint16_t *)(LCD_BASE_ADDR + 0x00020000U))
+/*
+ * The J1 TFT header routes the LCD RS/DC line to FSMC_A18. On a 16-bit FSMC
+ * bus that address line appears at byte offset 1 << (18 + 1) = 0x00080000.
+ */
+#define LCD_DATA_REG (*(volatile uint16_t *)(LCD_BASE_ADDR + 0x00080000U))
 
 /* GPIO Pin Definitions -----------------------------------------------------*/
-/* LCD Reset - PE2 */
-#define LCD_RST_PIN GPIO_PIN_2
-#define LCD_RST_PORT GPIOE
-/* LCD Backlight PWM - PA8 (TIM1_CH1) */
-#define LCD_BL_PIN GPIO_PIN_8
-#define LCD_BL_PORT GPIOA
-#define LCD_BL_TIM TIM1
-#define LCD_BL_TIM_CHANNEL TIM_CHANNEL_1
+/*
+ * On the STM32 F4VE J1 TFT header the panel reset line is tied to NRST,
+ * so the display resets together with the MCU and there is no dedicated
+ * GPIO-driven LCD reset signal available to firmware.
+ */
+#define LCD_BL_PIN GPIO_PIN_1
+#define LCD_BL_PORT GPIOB
 
 /* LCD Data Type -----------------------------------------------------------*/
 typedef uint16_t lcd_color_t;
@@ -173,6 +176,13 @@ static inline void LCD_WriteData(uint16_t data) {
 }
 
 static inline void LCD_WriteData16(uint16_t data) { LCD_DATA_REG = data; }
+
+static inline uint16_t LCD_ReadData16(void) {
+  uint16_t data = LCD_DATA_REG;
+  __asm volatile("nop");
+  __asm volatile("nop");
+  return data;
+}
 
 #ifdef __cplusplus
 }

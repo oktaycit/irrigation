@@ -8,8 +8,6 @@
 #include "lcd_ili9341.h"
 #include <stdlib.h>
 
-extern TIM_HandleTypeDef htim1;
-
 /* Orientation Private Variable */
 static lcd_orientation_t current_orientation = LCD_ORIENTATION_PORTRAIT;
 
@@ -91,9 +89,11 @@ uint16_t LCD_GetDisplayHeight(void) {
  * @brief  LCD Reset function
  */
 void LCD_Reset(void) {
-  HAL_GPIO_WritePin(LCD_RST_PORT, LCD_RST_PIN, GPIO_PIN_RESET);
-  HAL_Delay(50);
-  HAL_GPIO_WritePin(LCD_RST_PORT, LCD_RST_PIN, GPIO_PIN_SET);
+  /*
+   * The F4VE TFT header shares the panel reset line with NRST, so a hardware
+   * reset is already applied during MCU reset and cannot be toggled separately
+   * from firmware. Keep the power-up settle delay expected by the init flow.
+   */
   HAL_Delay(120);
 }
 
@@ -481,10 +481,14 @@ static void LCD_DrawFallbackChar(uint16_t x, uint16_t y, char c,
  */
 void LCD_SetBacklight(uint8_t brightness) {
   if (brightness > 100) brightness = 100;
-  /* TIM1_CH1 is used for PWM. Pulse value should be calculated based on Period */
-  /* Assuming Period is 1000 for 0-100 percentage mapping */
-  uint32_t pulse = (brightness * (uint32_t)__HAL_TIM_GET_AUTORELOAD(&htim1)) / 100;
-  __HAL_TIM_SET_COMPARE(&htim1, LCD_BL_TIM_CHANNEL, pulse);
+
+  /*
+   * The F4VE board routes LCD backlight enable to PB1 through a simple
+   * transistor stage. There is no MCU-connected PWM path on the J1 header, so
+   * brightness is effectively on/off in the stock wiring.
+   */
+  HAL_GPIO_WritePin(LCD_BL_PORT, LCD_BL_PIN,
+                    (brightness == 0U) ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 
 /**

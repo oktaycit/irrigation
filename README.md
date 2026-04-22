@@ -209,6 +209,8 @@ ANA EKRAN
 | [Docs/01_Sistem_Gereksinimleri.md](Docs/01_Sistem_Gereksinimleri.md) | Sistem gereksinimleri ve özellikler |
 | [Docs/02_Pin_Assignment.md](Docs/02_Pin_Assignment.md) | STM32 pin mapping tablosu |
 | [Docs/03_Donanim_Semasi.md](Docs/03_Donanim_Semasi.md) | Donanım bağlantı şemaları |
+| [Docs/06_USB_Programlama_Protokolu.md](Docs/06_USB_Programlama_Protokolu.md) | USB ile program import/export komut seti |
+| [Docs/07_USB_Masaustu_Arayuzu.md](Docs/07_USB_Masaustu_Arayuzu.md) | USB uzerinden program okuma/yazma masaustu araci |
 
 ---
 

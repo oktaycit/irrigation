@@ -187,6 +187,8 @@ uint8_t EC_GetStatus(void);
 void SENSORS_SetTemperature(float temp);
 float SENSORS_GetTemperature(void);
 float EC_TemperatureCompensate(float ec_value, float temperature);
+uint32_t PH_GetLastReadTime(void);
+uint32_t EC_GetLastReadTime(void);
 
 /* Filter Functions ---------------------------------------------------------*/
 uint16_t SENSORS_FilterADC(uint16_t new_value);
