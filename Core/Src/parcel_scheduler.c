@@ -43,8 +43,7 @@ uint8_t PARCEL_SCHED_AddToQueue(uint8_t parcel_id) {
     return 0U;
   }
 
-  if (PARCELS_IsEnabled(parcel_id) == 0U ||
-      PARCEL_SCHED_IsParcelQueued(parcel_id) != 0U) {
+  if (PARCEL_SCHED_IsParcelQueued(parcel_id) != 0U) {
     return 0U;
   }
 
@@ -80,7 +79,7 @@ uint8_t PARCEL_SCHED_BuildSequenceFromQueue(void) {
 
   while (count > 0U) {
     uint8_t parcel_id = g_scheduler.queue[index];
-    if (parcel_id != 0U && PARCELS_IsEnabled(parcel_id) != 0U) {
+    if (parcel_id != 0U) {
       g_scheduler.active_valves[g_scheduler.active_valve_count++] = parcel_id;
     }
 

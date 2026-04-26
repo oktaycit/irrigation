@@ -1,6 +1,6 @@
 # Irrigation Project TODO
 
-Durum ozeti: Proje calisan ve warning'siz derleme alan moduler firmware prototipi asamasinda. 2026-04-25 itibariyla `dosing_controller`, `parcel_scheduler`, `fault_manager`, `irrigation_runtime` ve `irrigation_persistence` katmanlari build icinde; `irrigation_control.c` icindeki baslatma/restore/persistence orkestrasyonu inceltildi, alarm reset akisi tekillestirildi ve reboot restore firmware guard'lari sertlestirildi. Kalan kritik is, bu restore davranisinin kart uzerinde dogrulanmasidir.
+Durum ozeti: Proje calisan ve warning'siz temiz derleme alan moduler firmware prototipi asamasinda. 2026-04-26 itibariyla core firmware yazilim mimarisi kapatilabilir durumda; `dosing_controller`, `parcel_scheduler`, `fault_manager`, `irrigation_runtime`, `irrigation_persistence`, `irrigation_schedule_trigger` ve `irrigation_run_session` katmanlari build icinde. Kalan kritik isler kart uzerinde runtime restore, vana/touch/sensor ve tam otomatik parsel dongusu dogrulamalaridir.
 
 ## Stratejik Referans
 
@@ -15,6 +15,8 @@ Yol haritasi ve segment kararlari icin:
 - [Docs/12_Urun_Yol_Haritasi.md](Docs/12_Urun_Yol_Haritasi.md)
 - [Docs/11_Urun_Segmentasyonu.md](Docs/11_Urun_Segmentasyonu.md)
 - [Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md](Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md)
+- [Docs/16_Core_Kapanis_Checklist.md](Docs/16_Core_Kapanis_Checklist.md)
+- [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)
 
 ## Simdiki Sprint
 
@@ -39,9 +41,17 @@ Yol haritasi ve segment kararlari icin:
 - [x] Sistem parametreleri icin CRC kontrolunu ve varsayilan fallback akisini sertlestir
 - [x] GUI uzerinden degisen ayarlari EEPROM/flash katmanina kalici yaz
 - [x] Yeniden baslatma sonrasi ayar koruma testini yap
+- [x] pH/EC hedef dozlama icin fuzzy duty hesaplayiciyi ekle ve Params menusunden secilebilir yap
 - [ ] Vana cikislarini, touch alanlarini ve sensor okumalarini kart uzerinde dogrula
 - [ ] Turkiye pazari icin ticari ilk mekanik hedefi 4+1 Venturi/Z-bypass olarak prototiple
 - [ ] Kanal basina 50-600 l/sa kapasite ve 1:100 / 1:200 dozlama profillerini veri modeline ekle
+
+### 2026-04-26 - Insight Linux Edge Yon Degisikligi
+- [x] `Insight` surum icin Raspbian/Raspberry Pi OS tarzi Linux edge arayuz kararini dokumante et
+- [ ] STM32 `device_info`, `telemetry_snapshot`, `fault_event` ve `runtime_event` paketlerini tanimla
+- [ ] USB CDC servis protokolunu gateway okuyabilecek sekilde genislet
+- [ ] `gateway/` altinda device-agent + yerel API + SQLite store iskeletini baslat
+- [ ] `gateway/ui` altinda canli dashboard prototipini hazirla
 
 ## Oncelik Sirasi
 
@@ -64,8 +74,8 @@ Yol haritasi ve segment kararlari icin:
 - [ ] Touch kalibrasyonunu EEPROM ile yukle/kaydet akisi ile tamamla
 - [ ] Program veri modelini statik saat alanlarindan `trigger_mode` ve flush parametrelerine dogru evrilt
 - [ ] Program/ayar veri modeline kanal kapasitesi, dozlama orani ve nominal ana hat debisi alanlarini ekle
-- [ ] Basit mod icin gun dogumu/periyot tabanli tetikleme modelini tanimla
-- [ ] `Core` ve `Insight` icin feature flag veya urun seviyesi modelini tasarla
+- [x] Basit mod icin gun dogumu/periyot tabanli tetikleme modelini tanimla
+- [ ] `Core` ve Linux edge arayuzlu `Insight` icin feature flag veya urun seviyesi modelini tasarla
 - [x] README ve TODO durumunu senkron tut
 
 ### P3
@@ -74,7 +84,7 @@ Yol haritasi ve segment kararlari icin:
 - [ ] Kod temizligi ve dokumantasyon iyilestirmeleri yap
 - [ ] LDR veya astronomik saat tabanli `light bucket` prototipini ekle
 - [ ] Hedef hacim icin yazilimsal litre sayaci ve debi kalibrasyonunu ekle
-- [ ] `Insight` segment icin sensor zengin dashboard ve tani alanlarini tasarla
+- [ ] `Insight` segment icin Linux edge sensor zengin dashboard ve tani alanlarini tasarla
 
 ## Cikis Kriterleri
 

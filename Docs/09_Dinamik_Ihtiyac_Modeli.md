@@ -32,6 +32,36 @@ Teknik notlar:
 - Astronomik saat ilk fazda yazilimsal olarak eklenebilir; ek donanim zorunlu degildir.
 - Basit mod, firmware icinde yine `dinamik tetikleme` olarak tutulur; yalnizca arayuz sadeleştirilir.
 
+Ilk firmware modeli:
+
+| Alan | Tip | Basit moddaki anlami | Ilk varsayilan |
+|------|-----|----------------------|----------------|
+| `trigger_mode` | enum | `FIXED_WINDOW`, `PERIODIC`, `SUNRISE_PERIODIC` | `FIXED_WINDOW` |
+| `start_hhmm` | HHMM | `PERIODIC` icin sabit saat ankraji | `0600` |
+| `anchor_offset_min` | int16 | Ankrajdan once/sonra dakika kaymasi | `0` |
+| `period_min` | uint16 | Iki tetikleme arasi minimum sure | `120` |
+| `max_events_per_day` | uint8 | Bir gunde en fazla kac tetikleme | `1` |
+| `days_mask` | bitmask | Haftanin hangi gunleri aktif | `0x7F` |
+| `last_run_day` / `last_run_minute` | runtime kaydi | Ayni slotun tekrar calismasini engeller | otomatik |
+
+Karar kurali:
+
+1. Program pasifse veya gun maskesi uymuyorsa tetiklenmez.
+2. `FIXED_WINDOW` eski davranisi korur: pencere icinde gunde bir kez calisir.
+3. `PERIODIC`, `start_hhmm + anchor_offset_min` dakikasini gunluk ankraj kabul eder.
+4. `SUNRISE_PERIODIC`, ilk fazda yazilimsal `06:00 + anchor_offset_min` ankrajini kullanir.
+5. `period_min` doldukca yeni slot acilir; `max_events_per_day` asildiginda o gun biter.
+6. Program basariyla calismaya girince `last_run_day` ve `last_run_minute` yazilir.
+
+Basit mod UI karsiligi:
+
+- Ankraj: `Sabit Saat` veya `Gun Dogumu`
+- Kaydirma: `-120..+720 dk`
+- Tekrar: `30..1440 dk`
+- Gunluk limit: `1..24`
+
+Not: `SUNRISE_PERIODIC` icin `06:00` yalnizca ilk faz placeholder'idir. Astronomik hesap veya isik sensoru eklendiginde ayni alanlar korunur; sadece ankraj kaynagi daha dogru hale gelir.
+
 ### 2.2 Seviye 2: Hacim Tabanli Sulama
 
 Sulama sonlandirma kriteri sure degil, hedef hacim olmalidir.

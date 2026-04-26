@@ -59,6 +59,29 @@ typedef struct {
   uint8_t days_mask;
   int16_t ec_set_x100;
   int16_t ph_set_x100;
+  uint8_t fert_ratio_percent[IRRIGATION_EC_CHANNEL_COUNT];
+  uint16_t pre_flush_sec;
+  uint16_t post_flush_sec;
+  uint16_t last_run_day;
+  uint16_t last_run_minute;
+  irrigation_trigger_mode_t trigger_mode;
+  int16_t anchor_offset_min;
+  uint16_t period_min;
+  uint8_t max_events_per_day;
+  uint16_t crc;
+} legacy_trigger_irrigation_program_t;
+
+typedef struct {
+  uint8_t enabled;
+  uint16_t start_hhmm;
+  uint16_t end_hhmm;
+  uint8_t valve_mask;
+  uint16_t irrigation_min;
+  uint16_t wait_min;
+  uint8_t repeat_count;
+  uint8_t days_mask;
+  int16_t ec_set_x100;
+  int16_t ph_set_x100;
   uint16_t last_run_day;
   uint16_t last_run_minute;
   uint8_t repeat_interval_min;
@@ -92,12 +115,16 @@ static void EEPROM_SetDefaultSystemParams(void);
 static void EEPROM_SetDefaultPrograms(void);
 static void EEPROM_SetDefaultParcel(uint8_t parcel_id, eeprom_parcel_t *parcel);
 static uint16_t EEPROM_GetProgramAddress(uint8_t program_id);
+static uint16_t EEPROM_GetLegacyTriggerProgramAddress(uint8_t program_id);
 static uint16_t EEPROM_GetLegacyRecipeProgramAddress(uint8_t program_id);
 static uint16_t EEPROM_GetCompatProgramAddress(uint8_t program_id);
 static uint16_t EEPROM_GetLegacyProgramAddress(uint8_t program_id);
 static uint16_t EEPROM_GetLegacyBasicProgramAddress(uint8_t program_id);
 static void EEPROM_MigrateLegacyRecipeProgram(
     const legacy_recipe_irrigation_program_t *legacy,
+    irrigation_program_t *program);
+static void EEPROM_MigrateLegacyTriggerProgram(
+    const legacy_trigger_irrigation_program_t *legacy,
     irrigation_program_t *program);
 static void EEPROM_MigrateCompatProgram(const compat_irrigation_program_t *legacy,
                                         irrigation_program_t *program);
@@ -109,6 +136,8 @@ static void EEPROM_MigrateLegacyBasicProgram(
     irrigation_program_t *program);
 static uint8_t EEPROM_LoadCompatPrograms(irrigation_program_t *programs,
                                          uint8_t count);
+static uint8_t EEPROM_LoadLegacyTriggerPrograms(irrigation_program_t *programs,
+                                                uint8_t count);
 static uint8_t EEPROM_LoadLegacyRecipePrograms(irrigation_program_t *programs,
                                                uint8_t count);
 static uint8_t EEPROM_LoadLegacyPrograms(irrigation_program_t *programs,
@@ -427,6 +456,7 @@ uint8_t EEPROM_LoadProgram(uint8_t program_id, irrigation_program_t *program) {
 uint8_t EEPROM_SaveProgram(uint8_t program_id,
                            const irrigation_program_t *program) {
   irrigation_program_t record = {0};
+  uint8_t result;
 
   if (program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT || program == NULL) {
     h_eeprom.last_error = EEPROM_WRITE_ERROR;
@@ -435,8 +465,13 @@ uint8_t EEPROM_SaveProgram(uint8_t program_id,
 
   record = *program;
   record.crc = EEPROM_CalculateCRC(&record, sizeof(record) - 2U);
-  return EEPROM_WriteBuffer(EEPROM_GetProgramAddress(program_id),
-                            (uint8_t *)&record, sizeof(record));
+  result = EEPROM_WriteBuffer(EEPROM_GetProgramAddress(program_id),
+                              (uint8_t *)&record, sizeof(record));
+  if (result == EEPROM_OK) {
+    h_eeprom.last_error = EEPROM_OK;
+  }
+
+  return result;
 }
 
 uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
@@ -456,6 +491,15 @@ uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
   }
 
   if (all_valid != 0U) {
+    h_eeprom.last_error = EEPROM_OK;
+    return EEPROM_OK;
+  }
+
+  if (EEPROM_LoadLegacyTriggerPrograms(programs, max_count) == EEPROM_OK) {
+    for (uint8_t i = 0U; i < max_count; i++) {
+      (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
+    }
+    h_eeprom.last_error = EEPROM_OK;
     return EEPROM_OK;
   }
 
@@ -463,6 +507,7 @@ uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
     for (uint8_t i = 0U; i < max_count; i++) {
       (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
     }
+    h_eeprom.last_error = EEPROM_OK;
     return EEPROM_OK;
   }
 
@@ -470,6 +515,7 @@ uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
     for (uint8_t i = 0U; i < max_count; i++) {
       (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
     }
+    h_eeprom.last_error = EEPROM_OK;
     return EEPROM_OK;
   }
 
@@ -477,6 +523,7 @@ uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
     for (uint8_t i = 0U; i < max_count; i++) {
       (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
     }
+    h_eeprom.last_error = EEPROM_OK;
     return EEPROM_OK;
   }
 
@@ -484,9 +531,12 @@ uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
     for (uint8_t i = 0U; i < max_count; i++) {
       (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
     }
+    h_eeprom.last_error = EEPROM_OK;
+    return EEPROM_OK;
   }
 
-  return EEPROM_OK;
+  h_eeprom.last_error = EEPROM_CRC_ERROR;
+  return EEPROM_ERROR;
 }
 
 uint8_t EEPROM_SaveRuntimeBackup(
@@ -515,14 +565,20 @@ uint8_t EEPROM_LoadRuntimeBackup(irrigation_runtime_backup_t *runtime_backup) {
     return EEPROM_ERROR;
   }
 
-  if (record.valid == 0U ||
-      !EEPROM_IsStructCRCValid(&record, sizeof(record), record.crc)) {
+  if (record.valid == 0U) {
+    memset(runtime_backup, 0, sizeof(*runtime_backup));
+    h_eeprom.last_error = EEPROM_OK;
+    return EEPROM_OK;
+  }
+
+  if (!EEPROM_IsStructCRCValid(&record, sizeof(record), record.crc)) {
     memset(runtime_backup, 0, sizeof(*runtime_backup));
     h_eeprom.last_error = EEPROM_CRC_ERROR;
     return EEPROM_ERROR;
   }
 
   *runtime_backup = record;
+  h_eeprom.last_error = EEPROM_OK;
   return EEPROM_OK;
 }
 
@@ -614,6 +670,12 @@ static void EEPROM_SetDefaultPrograms(void) {
     program.post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
     program.last_run_day = 0U;
     program.last_run_minute = 0xFFFFU;
+    program.trigger_mode = IRRIGATION_TRIGGER_FIXED_WINDOW;
+    program.anchor_offset_min = 0;
+    program.period_min = 120U;
+    program.max_events_per_day = 1U;
+    program.learned_ph_pwm_percent = 0U;
+    program.learned_ec_pwm_percent = 0U;
     (void)EEPROM_SaveProgram(i + 1U, &program);
   }
 
@@ -683,6 +745,10 @@ static uint8_t EEPROM_IsSystemParamsSane(const eeprom_system_t *system) {
     return 0U;
   }
 
+  if ((system->system_flags & (uint16_t)~EEPROM_SYSTEM_FLAGS_KNOWN_MASK) != 0U) {
+    return 0U;
+  }
+
   if (system->ph_max_correction_cycles > 10U ||
       system->ec_max_correction_cycles > 10U) {
     return 0U;
@@ -722,7 +788,7 @@ static void EEPROM_SetDefaultParcel(uint8_t parcel_id, eeprom_parcel_t *parcel) 
   }
 
   memset(parcel, 0, sizeof(*parcel));
-  (void)snprintf(parcel->name, sizeof(parcel->name), "Parsel %u", parcel_id);
+  (void)snprintf(parcel->name, sizeof(parcel->name), "Parcel %u", parcel_id);
   parcel->duration_sec = 300U;
   parcel->wait_sec = 0U;
   parcel->enabled = 1U;
@@ -732,6 +798,12 @@ static void EEPROM_SetDefaultParcel(uint8_t parcel_id, eeprom_parcel_t *parcel) 
 static uint16_t EEPROM_GetProgramAddress(uint8_t program_id) {
   return (uint16_t)(EEPROM_ADDR_PROGRAMS +
                     ((uint16_t)(program_id - 1U) * sizeof(irrigation_program_t)));
+}
+
+static uint16_t EEPROM_GetLegacyTriggerProgramAddress(uint8_t program_id) {
+  return (uint16_t)(
+      EEPROM_ADDR_PROGRAMS +
+      ((uint16_t)(program_id - 1U) * sizeof(legacy_trigger_irrigation_program_t)));
 }
 
 static uint16_t EEPROM_GetLegacyRecipeProgramAddress(uint8_t program_id) {
@@ -781,6 +853,44 @@ static void EEPROM_MigrateLegacyRecipeProgram(
   program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
   program->last_run_day = legacy->last_run_day;
   program->last_run_minute = legacy->last_run_minute;
+  program->trigger_mode = IRRIGATION_TRIGGER_FIXED_WINDOW;
+  program->anchor_offset_min = 0;
+  program->period_min = 120U;
+  program->max_events_per_day = 1U;
+  program->learned_ph_pwm_percent = 0U;
+  program->learned_ec_pwm_percent = 0U;
+}
+
+static void EEPROM_MigrateLegacyTriggerProgram(
+    const legacy_trigger_irrigation_program_t *legacy,
+    irrigation_program_t *program) {
+  if (legacy == NULL || program == NULL) {
+    return;
+  }
+
+  memset(program, 0, sizeof(*program));
+  program->enabled = legacy->enabled;
+  program->start_hhmm = legacy->start_hhmm;
+  program->end_hhmm = legacy->end_hhmm;
+  program->valve_mask = legacy->valve_mask;
+  program->irrigation_min = legacy->irrigation_min;
+  program->wait_min = legacy->wait_min;
+  program->repeat_count = legacy->repeat_count;
+  program->days_mask = legacy->days_mask;
+  program->ec_set_x100 = legacy->ec_set_x100;
+  program->ph_set_x100 = legacy->ph_set_x100;
+  memcpy(program->fert_ratio_percent, legacy->fert_ratio_percent,
+         sizeof(program->fert_ratio_percent));
+  program->pre_flush_sec = legacy->pre_flush_sec;
+  program->post_flush_sec = legacy->post_flush_sec;
+  program->last_run_day = legacy->last_run_day;
+  program->last_run_minute = legacy->last_run_minute;
+  program->trigger_mode = legacy->trigger_mode;
+  program->anchor_offset_min = legacy->anchor_offset_min;
+  program->period_min = legacy->period_min;
+  program->max_events_per_day = legacy->max_events_per_day;
+  program->learned_ph_pwm_percent = 0U;
+  program->learned_ec_pwm_percent = 0U;
 }
 
 static void EEPROM_MigrateCompatProgram(const compat_irrigation_program_t *legacy,
@@ -807,6 +917,12 @@ static void EEPROM_MigrateCompatProgram(const compat_irrigation_program_t *legac
   program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
   program->last_run_day = legacy->last_run_day;
   program->last_run_minute = legacy->last_run_minute;
+  program->trigger_mode = IRRIGATION_TRIGGER_FIXED_WINDOW;
+  program->anchor_offset_min = 0;
+  program->period_min = 120U;
+  program->max_events_per_day = 1U;
+  program->learned_ph_pwm_percent = 0U;
+  program->learned_ec_pwm_percent = 0U;
 }
 
 static void EEPROM_MigrateLegacyProgram(
@@ -834,6 +950,12 @@ static void EEPROM_MigrateLegacyProgram(
   program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
   program->last_run_day = legacy->last_run_day;
   program->last_run_minute = legacy->last_run_minute;
+  program->trigger_mode = IRRIGATION_TRIGGER_FIXED_WINDOW;
+  program->anchor_offset_min = 0;
+  program->period_min = 120U;
+  program->max_events_per_day = 1U;
+  program->learned_ph_pwm_percent = 0U;
+  program->learned_ec_pwm_percent = 0U;
 
   for (uint8_t i = 0U; i < IRRIGATION_PROGRAM_VALVE_COUNT; i++) {
     if ((program->valve_mask & (1U << i)) == 0U ||
@@ -871,6 +993,39 @@ static void EEPROM_MigrateLegacyBasicProgram(
   program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
   program->last_run_day = legacy->last_run_day;
   program->last_run_minute = legacy->last_run_minute;
+  program->trigger_mode = IRRIGATION_TRIGGER_FIXED_WINDOW;
+  program->anchor_offset_min = 0;
+  program->period_min = 120U;
+  program->max_events_per_day = 1U;
+  program->learned_ph_pwm_percent = 0U;
+  program->learned_ec_pwm_percent = 0U;
+}
+
+static uint8_t EEPROM_LoadLegacyTriggerPrograms(irrigation_program_t *programs,
+                                                uint8_t count) {
+  uint8_t max_count =
+      (count > IRRIGATION_PROGRAM_COUNT) ? IRRIGATION_PROGRAM_COUNT : count;
+
+  if (programs == NULL) {
+    return EEPROM_ERROR;
+  }
+
+  for (uint8_t i = 0U; i < max_count; i++) {
+    legacy_trigger_irrigation_program_t legacy = {0};
+
+    if (EEPROM_ReadBuffer(EEPROM_GetLegacyTriggerProgramAddress(i + 1U),
+                          (uint8_t *)&legacy, sizeof(legacy)) != EEPROM_OK) {
+      return EEPROM_ERROR;
+    }
+
+    if (!EEPROM_IsStructCRCValid(&legacy, sizeof(legacy), legacy.crc)) {
+      return EEPROM_ERROR;
+    }
+
+    EEPROM_MigrateLegacyTriggerProgram(&legacy, &programs[i]);
+  }
+
+  return EEPROM_OK;
 }
 
 static uint8_t EEPROM_LoadLegacyRecipePrograms(irrigation_program_t *programs,

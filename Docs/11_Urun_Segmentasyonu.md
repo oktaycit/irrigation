@@ -36,7 +36,7 @@ Yani iki farkli urun, iki farkli firmware degil; ayni platformun iki seviyesi ol
 | Kurulum | Hizli ve sade | Daha detayli commissioning |
 | Tetikleme | Periyot ve temel hacim mantigi | Isik, hacim, basinç ve gate mantigi |
 | Reçete | Daha sade | Parsel bazli ve daha esnek |
-| Arayuz | Az parametre | Daha fazla tani ve ayar |
+| Arayuz | STM32 TFT uzerinde az parametre | Raspbian/Raspberry Pi OS tarzi Linux edge dashboard |
 | Veri kullanimi | "calissin yeter" | "olc, anla, optimize et" |
 
 ## 4. `Core` Surum Onerisi
@@ -84,16 +84,20 @@ Yani iki farkli urun, iki farkli firmware degil; ayni platformun iki seviyesi ol
 ### Yazilim
 
 - Pro mod aktif olmali
+- Ana operator/servis arayuzu Linux edge cihazdaki web dashboard olmali
+- STM32 TFT ekrani temel durum, alarm ve gateway yokken minimal servis icin kalmali
 - `light bucket` mantigi kullanilmali
 - Gercek litre bazli bitis desteklenmeli
 - Basinç ve akiş tutarsizliklari fault veya warning uretmeli
 - Parsel bazli profiller ve receteler desteklenmeli
+- Yerel log, alarm gecmisi, commissioning ve servis ekranlari gateway uzerinde tutulmali
 
 ### Urun vaadi
 
 - Verimlilik optimizasyonu
 - Operasyonel izlenebilirlik
 - Daha dogru karar ve daha az saha kaybi
+- Sahada internet olmasa bile yerel ekrandan veya yerel agdan zengin operasyon paneli
 
 ## 6. Gelistirme Stratejisi
 
@@ -123,7 +127,7 @@ Bu proje icin en dogru urun stratejisi:
 
 - Ilk ticari odak: `Core`
 - Ilk mekanik/hidrolik odak: Venturi tabanli 4+1 Z-bypass dozlama unitesi
-- Mimarinin yonu: `Insight`
+- Mimarinin yonu: Linux edge arayuzlu `Insight`
 
 Boylece urun hem pazara hizli cikabilir, hem de ucuz cihaz olarak tikanmaz; ileride daha yuksek katma degerli bir platforma donusebilir.
 
@@ -136,9 +140,10 @@ Detayli Turkiye pazar/projeksiyon karsilastirmasi:
 Bu segmentasyon kararlari, urun yol haritasinda su sekilde uygulanmalidir:
 
 - `Core` once saha icin guvenilir ve kolay kullanilir surum olarak cikmalidir.
-- `Insight` daha sonra ayni platform uzerinde veri, tani ve optimizasyon katmani olarak acilmalidir.
+- `Insight` daha sonra ayni platform uzerinde Linux edge arayuz, veri, tani ve optimizasyon katmani olarak acilmalidir.
 - Bir ozellik hangi fazda gelirse gelsin, hangi segmente hizmet ettigi net belirtilmelidir.
 
 Detayli fazlama icin:
 
 - [Docs/12_Urun_Yol_Haritasi.md](Docs/12_Urun_Yol_Haritasi.md)
+- [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)

@@ -33,7 +33,7 @@ static void FAULT_MGR_CopyValveLabel(uint8_t valve_id, char *buffer,
   }
 
   if (valve_id == 0U) {
-    (void)snprintf(buffer, buffer_size, "vana");
+    (void)snprintf(buffer, buffer_size, "valve");
     return;
   }
 
@@ -42,7 +42,7 @@ static void FAULT_MGR_CopyValveLabel(uint8_t valve_id, char *buffer,
     if (parcel_name != NULL && parcel_name[0] != '\0') {
       (void)snprintf(buffer, buffer_size, "%s", parcel_name);
     } else {
-      (void)snprintf(buffer, buffer_size, "Parsel %u",
+      (void)snprintf(buffer, buffer_size, "Parcel %u",
                      (unsigned int)valve_id);
     }
     return;
@@ -50,22 +50,22 @@ static void FAULT_MGR_CopyValveLabel(uint8_t valve_id, char *buffer,
 
   switch (valve_id) {
   case DOSING_VALVE_ACID_ID:
-    (void)snprintf(buffer, buffer_size, "Asit vanasi");
+    (void)snprintf(buffer, buffer_size, "Acid valve");
     break;
   case DOSING_VALVE_FERT_A_ID:
-    (void)snprintf(buffer, buffer_size, "Gubre A vanasi");
+    (void)snprintf(buffer, buffer_size, "Fert A valve");
     break;
   case DOSING_VALVE_FERT_B_ID:
-    (void)snprintf(buffer, buffer_size, "Gubre B vanasi");
+    (void)snprintf(buffer, buffer_size, "Fert B valve");
     break;
   case DOSING_VALVE_FERT_C_ID:
-    (void)snprintf(buffer, buffer_size, "Gubre C vanasi");
+    (void)snprintf(buffer, buffer_size, "Fert C valve");
     break;
   case DOSING_VALVE_FERT_D_ID:
-    (void)snprintf(buffer, buffer_size, "Gubre D vanasi");
+    (void)snprintf(buffer, buffer_size, "Fert D valve");
     break;
   default:
-    (void)snprintf(buffer, buffer_size, "Vana %u", (unsigned int)valve_id);
+    (void)snprintf(buffer, buffer_size, "Valve %u", (unsigned int)valve_id);
     break;
   }
 }
@@ -89,9 +89,9 @@ static void FAULT_MGR_UpdateUserTexts(void) {
 
   if (g_fault.active == 0U) {
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "Aktif alarm yok. Sistem hazir.");
+                   "No active alarm. System ready.");
     (void)snprintf(g_fault.action_text, sizeof(g_fault.action_text),
-                   "Sulamayi baslatabilirsiniz.");
+                   "Irrigation can be started.");
     return;
   }
 
@@ -110,101 +110,101 @@ static void FAULT_MGR_UpdateUserTexts(void) {
   switch (g_fault.last_error) {
   case ERR_PH_SENSOR_FAULT:
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "pH olcumu alinmiyor veya veri gec kaldi.");
+                   "pH reading is missing or data timed out.");
     break;
   case ERR_EC_SENSOR_FAULT:
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "EC olcumu alinmiyor veya veri gec kaldi.");
+                   "EC reading is missing or data timed out.");
     break;
   case ERR_PH_OUT_OF_RANGE:
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "Asit tanki bos olabilir veya pH hedefe inmiyor. Asit hattini kontrol edin.");
+                   "Acid tank may be empty or pH is not reaching target. Check acid line.");
     break;
   case ERR_EC_OUT_OF_RANGE:
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "EC hedef araligin disina cikti.");
+                   "EC moved outside the target range.");
     break;
   case ERR_VALVE_STUCK:
     if ((fault_flags & VALVE_FAULT_DISABLED) != 0U && valve_name[0] != '\0') {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "%s devre disi. Ayardan etkinlestirin.", valve_name);
+                     "%s is disabled. Enable it in settings.", valve_name);
     } else if ((fault_flags & VALVE_FAULT_PARCEL_INTERLOCK) != 0U &&
                valve_name[0] != '\0' && source_name[0] != '\0') {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "%s acik oldugu icin %s acilmadi.", source_name,
+                     "%s is open, so %s did not open.", source_name,
                      valve_name);
     } else if ((fault_flags & VALVE_FAULT_DOSING_INTERLOCK) != 0U &&
                valve_name[0] != '\0') {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "%s icin dozaj kilidi aktif. Asit ve gubre ayni anda acilamaz.",
+                     "Dosing lock active for %s. Acid and fert cannot open together.",
                      valve_name);
     } else if ((fault_flags & VALVE_FAULT_STATE_MISMATCH) != 0U &&
                valve_name[0] != '\0') {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "%s komut aldi ama beklenen duruma gecmedi.", valve_name);
+                     "%s was commanded but did not reach expected state.", valve_name);
     } else if (valve_id <= PARCEL_VALVE_COUNT && valve_id != 0U) {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "%u numarali parsel vanasi cevap vermiyor. Kablo ve bobini kontrol edin.",
+                     "Parcel valve %u is not responding. Check wiring and coil.",
                      (unsigned int)valve_id);
     } else if (valve_id == DOSING_VALVE_ACID_ID) {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "Asit vanasi cevap vermiyor. Tank, kablo ve bobini kontrol edin.");
+                     "Acid valve is not responding. Check tank, wiring and coil.");
     } else {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "Bir vana komuta cevap vermedi. Kablo, bobin veya surucuyu kontrol edin.");
+                     "A valve did not respond. Check wiring, coil or driver.");
     }
     break;
   case ERR_TIMEOUT:
     if (g_fault.recommended_state == CTRL_STATE_EMERGENCY_STOP) {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "Acil durus aktif. Tum vanalar guvenli durum icin kapatildi.");
+                     "Emergency stop active. All valves were closed safely.");
     } else {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "Islem izin verilen sureyi asti.");
+                     "Operation exceeded the allowed time.");
     }
     break;
   case ERR_LOW_WATER_LEVEL:
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "Su seviyesi dusuk. Emis veya depo seviyesini kontrol edin.");
+                   "Water level is low. Check inlet or tank level.");
     break;
   case ERR_OVERCURRENT:
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "Surucude asiri akim algilandi.");
+                   "Overcurrent detected at the driver.");
     break;
   case ERR_COMMUNICATION:
     if (RTC_IsInitialized() == 0U) {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "RTC ayari yok. Zamanli program baslatilamiyor.");
+                     "RTC is not set. Scheduled program cannot start.");
     } else if ((g_fault.valve_error_mask &
          (VALVE_FAULT_DRIVER | VALVE_FAULT_TIMEOUT)) != 0U) {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "Vana surucusu veya I2C genisletici cevap vermiyor.");
+                     "Valve driver or I2C expander is not responding.");
     } else {
       (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                     "Cihazlar arasi haberlesme kesildi.");
+                     "Device communication was lost.");
     }
     break;
   case ERR_NONE:
   default:
     (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "Aktif alarm yok. Sistem hazir.");
+                   "No active alarm. System ready.");
     break;
   }
 
   if (g_fault.manual_ack_required != 0U) {
     if (g_fault.last_error == ERR_COMMUNICATION && RTC_IsInitialized() == 0U) {
       (void)snprintf(g_fault.action_text, sizeof(g_fault.action_text),
-                     "Saat ve tarihi ayarlayin, sonra ONAYLA tusuna basin.");
+                     "Set time/date, then press ACK.");
     } else {
       (void)snprintf(g_fault.action_text, sizeof(g_fault.action_text),
-                     "Sahayi kontrol edin, sonra ONAYLA tusuna basin.");
+                     "Check field, then press ACK.");
     }
   } else if (g_fault.active != 0U) {
     (void)snprintf(g_fault.action_text, sizeof(g_fault.action_text),
-                   "Sorun giderildiyse RESET ile alarmi temizleyin.");
+                   "If fixed, clear the alarm with RESET.");
   } else {
     (void)snprintf(g_fault.action_text, sizeof(g_fault.action_text),
-                   "Sulamayi baslatabilirsiniz.");
+                   "Irrigation can be started.");
   }
 }
 
@@ -283,12 +283,12 @@ void FAULT_MGR_SetAlarmText(const char *text) {
   }
 
   (void)snprintf(g_fault.alarm_text, sizeof(g_fault.alarm_text), "%s", text);
-  if (g_fault.active == 0U) {
-    (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
-                   "Son islem tamamlandi.");
-    (void)snprintf(g_fault.action_text, sizeof(g_fault.action_text),
-                   "Yeni komut icin sistem hazir.");
-  }
+	  if (g_fault.active == 0U) {
+	    (void)snprintf(g_fault.detail_text, sizeof(g_fault.detail_text),
+	                   "Last operation completed.");
+	    (void)snprintf(g_fault.action_text, sizeof(g_fault.action_text),
+	                   "System ready for a new command.");
+	  }
 }
 
 void FAULT_MGR_SetValveErrorMask(uint8_t valve_error_mask) {

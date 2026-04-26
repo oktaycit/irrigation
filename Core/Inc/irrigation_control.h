@@ -83,6 +83,10 @@ void IRRIGATION_CTRL_SetPHDosingResponse(uint32_t feedback_delay_ms,
 void IRRIGATION_CTRL_SetECDosingResponse(uint32_t feedback_delay_ms,
                                          uint8_t response_gain_percent,
                                          uint8_t max_correction_cycles);
+void IRRIGATION_CTRL_SetDosingLogicMode(dosing_logic_mode_t mode);
+dosing_logic_mode_t IRRIGATION_CTRL_GetDosingLogicMode(void);
+void IRRIGATION_CTRL_SetDosingValveEnabled(uint8_t valve_id, uint8_t enabled);
+uint8_t IRRIGATION_CTRL_IsDosingValveEnabled(uint8_t valve_id);
 void IRRIGATION_CTRL_SetECRecipe(const uint8_t *ratio_percent, uint8_t count);
 void IRRIGATION_CTRL_GetECRecipe(uint8_t *ratio_percent, uint8_t count);
 void IRRIGATION_CTRL_GetPHParams(ph_control_params_t *params);

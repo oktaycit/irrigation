@@ -47,6 +47,8 @@ Bu grup once `Core`, sonra `Insight` yolunu acan en hizli islerdir.
 | FW-10 | Program modelini `trigger_mode`, `pre_flush_sec`, `post_flush_sec`, `recipe_profile_id` alanlarina evrilt | Core + Insight | P1 | Gelecek fazlari bloke etmez |
 | FW-13 | Kanal bazli kapasite ve dozlama orani modelini ekle: `nominal_capacity_lph`, `1:100`, `1:200`, ozel oran | Core + Insight | P1 | Turkiye pazari icin 50-600 l/sa kanal hedefini firmware'de temsil eder |
 | FW-14 | Booster pompa cikisi ve interlock mantigini ekle | Core + Insight | P1 | Dusuk basincli sahalarda Venturi performansini stabil tutar |
+| FW-15 | Gateway icin `device_info`, `telemetry_snapshot`, `fault_event`, `runtime_event` paketlerini standartlastir | Insight, premium Core | P0 | Linux edge arayuzun firmware ile temiz konusmasini saglar |
+| FW-16 | USB CDC servis protokolunu durum, olay, config ve manuel komut siniflariyla genislet | Insight, premium Core | P0 | Raspbian tarzi gateway MVP'nin ilk baglantisi |
 | FW-11 | Alarm gecmisi ve olay gunlugu ekle | Insight | P2 | Tani ve izlenebilirlik getirir |
 | FW-12 | Bakim zekasi: kalibrasyon zamani, vana cevrim sayisi, servis hatirlatma | Insight | P2 | Operasyonel deger uretir |
 
@@ -65,8 +67,23 @@ Bu grup `Insight` icin kritik fark yaratir; bazilari `Core` icin opsiyonel premi
 | HW-05 | Drenaj geri bildirimi veya inhibit girisi ekle | Insight | P2 | Daha guvenilir sulama dogrulamasi |
 | HW-06 | Toprak nemi girisini advisory veya gate roluyle ekle | Insight | P3 | Faydali ama ilk kritik halka degil |
 | HW-07 | Debi sensoru icin pulse capture / timer altyapisini guclendir | Insight | P2 | Olcum kalitesini yukselten teknik iyilestirme |
-| HW-08 | `STM32` yanina `Raspberry Pi` benzeri edge gateway katmani ekle | Insight, premium Core | P2 | Mobil, internet ve operasyon katmanini emniyetli sekilde ayirir |
-| HW-09 | Gateway icin `Wi-Fi` / `Ethernet` / opsiyonel `4G` baglanti varyantlarini tanimla | Insight, premium Core | P2 | Saha baglantisini urunlestirir |
+| HW-08 | `STM32` yanina `Raspberry Pi` benzeri Linux edge arayuz/gateway katmani ekle | Insight, premium Core | P0 | Insight'in ana operator ve servis deneyimini tasir |
+| HW-09 | Gateway icin `Ethernet` / `Wi-Fi` / opsiyonel `4G` baglanti varyantlarini tanimla | Insight, premium Core | P1 | Saha baglantisini urunlestirir |
+
+## 4.1 Linux Edge / Gateway Isleri
+
+Bu grup, `Insight` surumunu Raspbian/Raspberry Pi OS tarzi arayuz uzerinden urunlestirmek icin yeni omurgadir.
+
+| ID | Is | Segment | Oncelik | Gerekce |
+|----|----|---------|---------|---------|
+| GW-01 | `gateway/` klasorunde device-agent servis iskeletini baslat | Insight | P0 | STM32 ile Linux edge arasindaki canli kopru |
+| GW-02 | USB CDC uzerinden reconnect destekli telemetry okuyucu ekle | Insight | P0 | Ilk saha prototipi icin en hizli baglanti |
+| GW-03 | SQLite tabanli event/telemetry store ekle | Insight | P0 | Internet yokken log ve tani kaybolmaz |
+| GW-04 | Yerel REST API ve websocket stream ekle | Insight | P0 | Web dashboard ve mobil istemci ayni API'yi kullanir |
+| GW-05 | `gateway/ui` altinda canli dashboard prototipi ekle | Insight | P0 | Raspbian arayuz kararinin gorunen urun karsiligi |
+| GW-06 | Chromium kiosk modu ve servis autostart paketini tasarla | Insight | P1 | Cihaz ustu ekran deneyimi icin gerekli |
+| GW-07 | Rol/izin ve audit log altyapisini ekle | Insight | P1 | Manuel komut ve servis akislari icin emniyet |
+| GW-08 | Cloud sync worker icin disk kuyrugu ve MQTT/HTTPS taslagini hazirla | Insight | P2 | Uzak izleme ve filo yonetimine gecis |
 
 ## 5. Ticari Fark Yaratan Isler
 
@@ -83,10 +100,11 @@ Bu grup, teknik olarak da degerli ama asil etkisi urunun konumlanmasinda gorulen
 | CV-06 | Alarm gecmisi ve servis ekranlari | Insight | P2 | Teknik servis ve isletme yonetimi icin degerli |
 | CV-07 | Bakim zekasi | Insight | P2 | Ariza olmadan once mudahale avantaji |
 | CV-08 | Uzak izleme ve alarm bildirimi | Insight, premium Core | P2 | Ust segment satis dili icin onemli |
-| CV-09 | Mobil operator ve servis uygulamasi | Insight, premium Core | P2 | Saha erisimi ve kullanim kolayligi saglar |
+| CV-09 | Linux edge operator ve servis dashboardu | Insight | P0 | Insight'i ayirt eden ana arayuz deneyimi |
+| CV-12 | Mobil operator ve servis uygulamasi | Insight, premium Core | P2 | Linux edge API olgunlastiktan sonra saha erisimini genisletir |
 | CV-10 | AI destekli alarm ozetleme ve operasyon tavsiyeleri | Insight | P2 | "Akilli operasyon" deger onermesini guclendirir |
 
-## 6. Sonraki 3 Sprint Onerisi
+## 6. Sonraki Sprint Onerisi
 
 Bu repo icin en mantikli kisa-orta vade siralama:
 
@@ -118,6 +136,21 @@ Beklenen sonuc:
 
 - HW-10 4+1 Venturi/Z-bypass mekanik hedefini prototiple
 - HW-11 110 mm ana hat / flow cell / statik mikser kurulum standardini dokumante et
+- FW-15 gateway telemetry/event paketlerini standartlastir
+- FW-16 USB CDC servis protokolunu gateway icin genislet
+- GW-01 device-agent iskeletini baslat
+- GW-02 USB CDC telemetry okuyucu ekle
+- GW-03 SQLite event/telemetry store ekle
+
+Beklenen sonuc:
+
+- `Insight` Linux edge arayuzunun firmware ile konusabilecegi ilk omurga acilir.
+
+### Sprint 4
+
+- GW-04 yerel REST API ve websocket stream
+- GW-05 canli dashboard prototipi
+- GW-06 kiosk modu ve autostart tasarimi
 - HW-02 debi sensoru entegrasyonu tasarimi
 - FW-10 program modelinin evrilmesi
 - CV-03 learned-flow mantigi
@@ -125,13 +158,14 @@ Beklenen sonuc:
 
 Beklenen sonuc:
 
-- `Insight` altyapisi acilir, ayni platform yuksek katma degerli urune doner.
+- `Insight` sahada Linux edge dashboard ile gorunur hale gelir; sensor zenginlestirme ayni arayuze baglanir.
 
-### Sprint 4
+### Sprint 5
 
-- HW-08 edge gateway mimarisi
 - HW-09 saha baglanti varyantlari
-- CV-09 mobil uygulama MVP
+- GW-07 rol/izin ve audit log
+- GW-08 cloud sync taslagi
+- CV-12 mobil uygulama MVP
 - CV-10 AI advisory katmani icin veri modeli
 
 Beklenen sonuc:
@@ -144,16 +178,19 @@ Bazi backlog kalemleri birbirine baglidir:
 
 - `pre-flush/post-flush` olmadan hacim ve recete modeli eksik kalir
 - debi sensoru olmadan gercek hacim bitisi eksik kalir
-- veri modeli evrilmeden `Insight` ozellikleri temiz acilamaz
+- telemetry/event protokolu sabitlenmeden Linux edge arayuz saglamlasamaz
+- gateway store/API olmadan mobil, bulut ve AI katmanlari temiz acilamaz
 - kurulum sihirbazi olmadan `Core` segmentinde kullanim kolayligi iddiasi zayif kalir
 
 Bu nedenle teknik sira su omurga ile korunmalidir:
 
 1. Guvenli kontrol
 2. Sade kullanim
-3. Akis/dogrulama sensorleri
-4. Recete ve optimizasyon
-5. Baglanti ve operasyon katmani
+3. STM32 telemetry/event protokolu
+4. Linux edge gateway ve yerel dashboard
+5. Akis/dogrulama sensorleri
+6. Recete ve optimizasyon
+7. Cloud, mobil ve AI katmani
 
 Baglanti mimarisi icin detay:
 
@@ -163,10 +200,14 @@ Baglanti mimarisi icin detay:
 
 Bugun itibariyla en yuksek getirili ilk 5 is:
 
-1. `FW-01` sulama fazlarini netlestirmek
-2. `FW-03` fault ve emniyet akislarini tekillestirmek
-3. `FW-06` kurulum sihirbazi eklemek
-4. `HW-10` 4+1 Venturi/Z-bypass ticari mekanik hedefini tasarlamak
-5. `FW-13` kanal kapasitesi ve dozlama orani modelini eklemek
+1. `FW-15` gateway telemetry/event paketlerini standartlastirmek
+2. `FW-16` USB CDC servis protokolunu gateway icin genisletmek
+3. `GW-01` device-agent iskeletini baslatmak
+4. `GW-05` Linux edge canli dashboard prototipini cikarmak
+5. `HW-10` 4+1 Venturi/Z-bypass ticari mekanik hedefini tasarlamak
 
-Bu besli, hem `Core` satisina hem de `Insight` evrimine ayni anda hizmet eder.
+Bu besli, `Core` kontrol cekirdegini korurken `Insight` surumunu Raspbian tarzi arayuz uzerinden somut urune cevirir.
+
+Insight edge arayuz detayi:
+
+- [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)

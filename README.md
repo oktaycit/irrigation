@@ -221,6 +221,8 @@ ANA EKRAN
 | [Docs/12_Urun_Yol_Haritasi.md](Docs/12_Urun_Yol_Haritasi.md) | `Core` ve `Insight` segmentlerini ayirmadan ilerleyen fazli urun yol haritasi |
 | [Docs/13_Teknik_Backlog.md](Docs/13_Teknik_Backlog.md) | Yol haritasini `hemen firmware`, `ek donanim ister`, `ticari fark yaratir` backlog'una ceviren teknik liste |
 | [Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md](Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md) | Turkiye pazari kapasite varsayimlari ile mevcut urun hedeflerini karsilastiran hedef revizyonu |
+| [Docs/16_Core_Kapanis_Checklist.md](Docs/16_Core_Kapanis_Checklist.md) | Core firmware kapanis karari, son temiz build ozeti ve kalan saha kabul maddeleri |
+| [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md) | Insight surum icin Raspbian/Raspberry Pi OS tarzi Linux edge arayuz ve gateway plani |
 
 ---
 

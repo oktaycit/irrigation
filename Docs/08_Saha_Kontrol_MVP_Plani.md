@@ -112,6 +112,9 @@ MVP kural seti:
 - Maksimum tek doz suresi asilirsa hata uretilir.
 - Sensor geri besleme gecikmesi pH ve EC icin ayri `feedback_delay_ms` parametresiyle ayarlanir.
 - Agresif veya yumusak duzeltme `response_gain_percent` ile sahaya gore kalibre edilir.
+- pH ve EC duty karari fuzzy rule table ile verilir; hata buyuklugu ve onceki olcume gore hata trendi birlikte kullanilir.
+- EC hedefe yaklasirken daha muhafazakar duty carpani kullanilir, cunku EC overshoot ancak seyreltme veya temiz suyla geri alinabilir.
+- `Settings > Params` ekranindan `FUZZY` ve eski `LINEAR` duty mantigi arasinda gecis yapilabilir.
 - Bu ileri dozaj parametreleri cihazdaki `Settings > Params` ekranindan degistirilir ve EEPROM sistem kaydinda saklanir.
 - Ardisik basarisiz doz denemeleri fault sayacina islenir.
 

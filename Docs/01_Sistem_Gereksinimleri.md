@@ -219,8 +219,14 @@ PARSEL SIRA İLE:
 #### Senaryo 4: Dinamik Ihtiyac Tetikleme
 ```
 EĞER trigger_mode = PERIODIC İSE:
-    - Güneş doğumu veya sabit saat referansına göre çalıştır
-    - Belirlenen aralık kadar tekrar et
+    - start_hhmm + anchor_offset_min referansına göre çalıştır
+    - period_min kadar aralıkla tekrar et
+    - max_events_per_day sınırına ulaşınca o gün tekrar tetikleme
+
+EĞER trigger_mode = SUNRISE_PERIODIC İSE:
+    - İlk fazda 06:00 + anchor_offset_min referansını kullan
+    - Astronomik saat veya ışık sensörü eklendiğinde aynı alanları gerçek gün doğumuyla besle
+    - period_min ve max_events_per_day sınırlarını uygula
 
 EĞER trigger_mode = VOLUME_TARGET İSE:
     - Parsel için hedef litreye ulaşınca sulamayı bitir

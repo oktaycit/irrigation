@@ -1,11 +1,11 @@
-# Baglanti, Mobil ve AI Katmani Mimarisi
+# Baglanti, Linux Edge Arayuz, Mobil ve AI Katmani Mimarisi
 
-Bu dokuman, cihazi bir sonraki fazda `Raspberry Pi` benzeri bir ara katman ile daha etkin yonetmek, mobil arayuz eklemek ve internet/AI katmanlarini kontrollu sekilde sisteme dahil etmek icin onerilen mimariyi tanimlar.
+Bu dokuman, cihazi bir sonraki fazda `Raspberry Pi` benzeri bir ara katman ile daha etkin yonetmek, Raspbian/Raspberry Pi OS tarzi yerel arayuz eklemek ve internet/mobil/AI katmanlarini kontrollu sekilde sisteme dahil etmek icin onerilen mimariyi tanimlar.
 
 Temel ilke:
 
 - `STM32` kart, gercek zamanli saha kontrolcusu olarak kalir.
-- `Raspberry Pi` benzeri cihaz, baglanti ve entegrasyon katmani olarak calisir.
+- `Raspberry Pi` benzeri cihaz, `Insight` icin ana Linux edge arayuz ve entegrasyon katmani olarak calisir.
 - mobil uygulama ve bulut servisleri, dogrudan role veya dozaj vanasina degil `gateway` uzerinden erisir.
 - `AI`, otomatik karar veren kontrol cekirdegi degil; once onerici, tani ve optimizasyon katmani olarak konumlanir.
 
@@ -16,9 +16,9 @@ Bu ayrim sayesinde internet veya mobil uygulama olmasa bile saha kontrolu calism
 Bu urunun ana riski, baglanti ozellikleri eklenirken saha emniyetinin zayiflamasidir. Bu nedenle mimari su sekilde ayrilmalidir:
 
 - `STM32`: vana, sensor, fault ve scheduler kontrolunu yapar
-- `Gateway`: veri toplar, uzaktan erisim saglar, log senkronize eder
+- `Linux Edge/Gateway`: yerel arayuzu calistirir, veri toplar, uzaktan erisim saglar, log senkronize eder
 - `Cloud`: cihaz filolari, raporlama, alarm dagitimi ve AI servisleri icin kullanilir
-- `Mobile`: operator ve teknisyen arayuzu olur
+- `Mobile`: Linux edge ve cloud'a baglanan eslikci operator/teknisyen arayuzu olur
 
 Bu model, urunu "tek kutu calisan kontrolcu"dan "bagli operasyon platformu"na tasir.
 
@@ -44,13 +44,14 @@ Bu katmana eklenmesi onerilen baglanti hazirligi:
 - anlik durum paketi (`telemetry snapshot`)
 - komut kabul katmani: `read-only`, `set parameter`, `manual action`, `ack fault`
 
-### 2.2 Edge Gateway Katmani - `Raspberry Pi`
+### 2.2 Linux Edge Arayuz ve Gateway Katmani - `Raspberry Pi`
 
 Bu katman icin `Raspberry Pi 4`, `Raspberry Pi CM4` veya sahaya gore `Zero 2 W` benzeri bir kart kullanilabilir.
 
 Ana gorevleri:
 
 - `STM32` ile haberlesmek
+- cihaz ustunde zengin yerel web arayuzu sunmak
 - yerel API saglamak
 - veriyi gecici olarak yerelde tamponlamak
 - internet varsa buluta senkronize etmek
@@ -61,10 +62,19 @@ Bu katmanin cihaz ustunde sunacagi servisler:
 
 - `Device Agent`: STM32 haberlesme sureci
 - `Local API`: REST veya gRPC
+- `Local Web UI`: dashboard, commissioning, servis ve recete ekranlari
 - `Message Broker`: tercihen `MQTT`
+- `Local Store`: SQLite veya benzeri disk tabanli veri kaydi
 - `Sync Worker`: bulut senkronizasyonu
 - `OTA/Update Worker`: gateway yazilimi ve firmware dagitimi
 - `Rule Engine`: internet olmadan calisabilecek basit kural motoru
+
+Arayuz tercihi:
+
+- Ilk urunlestirme icin browser tabanli yerel web arayuzu onerilir.
+- Cihaz uzerinde ekran varsa Chromium kiosk modunda acilir.
+- Telefon/tablet ayni yerel agdayken ayni web arayuzune veya PWA'ya baglanabilir.
+- Native mobil uygulama, bu yerel API ve veri modelinden sonra gelmelidir.
 
 ### 2.3 Cloud Katmani
 
@@ -82,7 +92,7 @@ Sorumluluklari:
 
 ### 2.4 Mobil Arayuz Katmani
 
-Mobil uygulama iki farkli persona icin dusunulmelidir:
+Mobil uygulama iki farkli persona icin dusunulmelidir, ancak `Insight` v1 icin ana arayuz Linux edge web dashboard olmalidir:
 
 - operator: "su an ne oluyor, alarm var mi, manuel mudahale gerekli mi?"
 - teknisyen: "kurulum, servis, kalibrasyon, log, test ve konfig"
@@ -96,6 +106,11 @@ Ilk surum icin mobil uygulama su ekranlarla sinirli kalmalidir:
 - fault detay ve onay
 - son olaylar
 - program veya profil secimi
+
+Not:
+
+- Mobil uygulama, ilk fazda Linux edge arayuzunun yerel ag/uzak erisim istemcisi gibi tasarlanmalidir.
+- Kritik servis ve commissioning akislari once gateway web arayuzunde olgunlastirilmalidir.
 
 ## 3. Katmanlar Arasi Iletisim
 
@@ -237,26 +252,27 @@ Zorunlu kurallar:
 
 ## 8. Fazli Uygulama Onerisi
 
-### Faz 4A - Yerel Gateway MVP
+### Faz 2A - Insight Linux Edge MVP
 
 Hedef:
 
-- `STM32` yanina bir `Raspberry Pi` baglayip yerel izleme ve servis katmani acmak
+- `STM32` yanina bir `Raspberry Pi` baglayip yerel izleme, dashboard ve servis katmani acmak
 
 Teslimatlar:
 
 - USB/UART ile cihaz baglantisi
 - gateway `device agent`
 - yerel REST API
-- temel web veya mobil prototip
+- temel web dashboard
 - olay ve durum loglama
 - fault bildirimleri
 
 Basari olcutu:
 
 - internet olmadan ayni sahada telefondan cihaz durumu gorulebilmeli
+- cihaz uzerinde ekran varsa kiosk dashboard acilmali
 
-### Faz 4B - Internet ve Uzak Izleme
+### Faz 4A - Internet ve Uzak Izleme
 
 Hedef:
 
@@ -274,7 +290,7 @@ Basari olcutu:
 
 - birden fazla saha cihazi tek panelden izlenebilmeli
 
-### Faz 4C - AI Destekli Operasyon
+### Faz 4B - AI Destekli Operasyon
 
 Hedef:
 
@@ -307,12 +323,14 @@ Gateway tarafinda:
 - `gateway/` altinda ayri servis klasoru ac
 - `Python` veya `Go` ile `device agent` baslat
 - lokal `MQTT` veya hafif kuyruk yapisi kur
+- SQLite tabanli yerel telemetry/event store ekle
 - REST API ve websocket olay akisi ekle
 - internet kesintisi icin disk tabanli kuyruk ekle
+- `gateway/ui` altinda Linux edge web dashboard baslat
 
 Mobil tarafinda:
 
-- canli durum dashboard prototipi hazirla
+- Linux edge web dashboard olgunlastiktan sonra mobil istemci prototipi hazirla
 - manuel komut akisini rol bazli tasarla
 - alarm detay ve olay gecmisi ekranlarini cikar
 - yerel ag ve uzak baglanti modlarini ayir
@@ -328,9 +346,13 @@ AI tarafinda:
 Bu urunde en saglikli sonraki adim su olmalidir:
 
 - `STM32` = emniyetli kontrol cekirdegi
-- `Raspberry Pi` = baglanti ve entegrasyon katmani
-- `Mobile` = operator/servis arayuzu
+- `Raspberry Pi` = Linux edge arayuz, baglanti ve entegrasyon katmani
+- `Mobile` = operator/servis eslikci arayuzu
 - `Cloud` = filo, rapor ve uzaktan operasyon
 - `AI` = tani, ozetleme ve optimizasyon
 
 Boylece urun, sahada calisan guvenilir cekirdegini korurken bagli ve akilli bir platforma evrilebilir.
+
+Insight Linux edge arayuz karari icin:
+
+- [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)

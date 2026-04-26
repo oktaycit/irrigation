@@ -27,6 +27,9 @@ typedef struct {
   dosing_phase_t phase;
   uint16_t active_mask;
   uint8_t pending_duty_percent;
+  uint8_t active_duty_percent;
+  dosing_phase_t last_completed_phase;
+  uint8_t last_completed_duty_percent;
   control_state_t recommended_state;
   error_code_t last_error;
 } dosing_controller_status_t;

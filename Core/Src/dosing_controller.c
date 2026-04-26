@@ -15,6 +15,9 @@ typedef struct {
   dosing_phase_t mixing_source_phase;
   uint16_t active_mask;
   uint8_t pending_duty_percent;
+  uint8_t active_duty_percent;
+  dosing_phase_t last_completed_phase;
+  uint8_t last_completed_duty_percent;
   uint32_t dose_started_ms;
   uint32_t mix_started_ms;
   uint32_t settle_started_ms;
@@ -23,6 +26,10 @@ typedef struct {
   error_code_t last_error;
   uint8_t ph_correction_cycles;
   uint8_t ec_correction_cycles;
+  float last_ph_error;
+  float last_ec_error;
+  uint8_t has_ph_error_sample;
+  uint8_t has_ec_error_sample;
 } dosing_runtime_t;
 
 static dosing_runtime_t g_dosing = {0};
@@ -30,9 +37,17 @@ static const uint8_t g_ec_dosing_valve_ids[IRRIGATION_EC_CHANNEL_COUNT] = {
     DOSING_VALVE_FERT_A_ID, DOSING_VALVE_FERT_B_ID, DOSING_VALVE_FERT_C_ID,
     DOSING_VALVE_FERT_D_ID};
 
-static uint8_t DOSING_CTRL_CalculateDemandDuty(float error, float hysteresis,
+static uint8_t DOSING_CTRL_CalculateFuzzyDuty(float error, float previous_error,
+                                              uint8_t has_previous_error,
+                                              float hysteresis,
+                                              uint8_t nominal_duty,
+                                              uint8_t response_gain_percent,
+                                              uint8_t conservative_target);
+static uint8_t DOSING_CTRL_CalculateLinearDuty(float error, float hysteresis,
                                                uint8_t nominal_duty,
                                                uint8_t response_gain_percent);
+static float DOSING_CTRL_GradeRising(float value, float start, float full);
+static float DOSING_CTRL_GradeFalling(float value, float full, float end);
 static uint32_t DOSING_CTRL_GetFeedbackDelayMs(const ph_control_params_t *ph_params,
                                                const ec_control_params_t *ec_params);
 static uint8_t DOSING_CTRL_IsCorrectionLimitReached(dosing_phase_t phase,
@@ -59,7 +74,123 @@ void DOSING_CTRL_Reset(void) {
   g_dosing.resume_state = CTRL_STATE_PARCEL_WATERING;
 }
 
-static uint8_t DOSING_CTRL_CalculateDemandDuty(float error, float hysteresis,
+static float DOSING_CTRL_GradeRising(float value, float start, float full) {
+  if (value <= start) {
+    return 0.0f;
+  }
+  if (value >= full) {
+    return 1.0f;
+  }
+
+  return (value - start) / (full - start);
+}
+
+static float DOSING_CTRL_GradeFalling(float value, float full, float end) {
+  if (value <= full) {
+    return 1.0f;
+  }
+  if (value >= end) {
+    return 0.0f;
+  }
+
+  return (end - value) / (end - full);
+}
+
+static uint8_t DOSING_CTRL_CalculateFuzzyDuty(float error, float previous_error,
+                                              uint8_t has_previous_error,
+                                              float hysteresis,
+                                              uint8_t nominal_duty,
+                                              uint8_t response_gain_percent,
+                                              uint8_t conservative_target) {
+  static const float ph_rule[4][3] = {
+      /* improving, stable, worsening */
+      {0.55f, 0.75f, 0.95f}, /* just outside target band */
+      {0.75f, 1.00f, 1.25f}, /* small error */
+      {1.05f, 1.35f, 1.65f}, /* medium error */
+      {1.30f, 1.70f, 2.05f}, /* large error */
+  };
+  static const float ec_rule[4][3] = {
+      /* EC overshoot is hard to undo, so approach target more softly. */
+      {0.40f, 0.55f, 0.75f},
+      {0.60f, 0.85f, 1.05f},
+      {0.85f, 1.15f, 1.45f},
+      {1.10f, 1.45f, 1.80f},
+  };
+  const float(*rule)[3] = (conservative_target != 0U) ? ec_rule : ph_rule;
+  float effective_hysteresis = hysteresis;
+  float error_units;
+  float trend_units = 0.0f;
+  float error_grade[4];
+  float trend_grade[3];
+  float weighted_sum = 0.0f;
+  float grade_sum = 0.0f;
+  float multiplier;
+  float scaled_duty;
+  uint8_t effective_gain = response_gain_percent;
+
+  if (nominal_duty == 0U || error <= 0.0f) {
+    return 0U;
+  }
+
+  if (effective_gain == 0U) {
+    effective_gain = 100U;
+  }
+
+  if (effective_hysteresis < 0.05f) {
+    effective_hysteresis = 0.05f;
+  }
+
+  error_units = error / effective_hysteresis;
+  if (has_previous_error != 0U) {
+    trend_units = (previous_error - error) / effective_hysteresis;
+  }
+
+  error_grade[0] = DOSING_CTRL_GradeFalling(error_units, 1.0f, 1.8f);
+  error_grade[1] = fminf(DOSING_CTRL_GradeRising(error_units, 1.0f, 2.0f),
+                         DOSING_CTRL_GradeFalling(error_units, 2.0f, 3.2f));
+  error_grade[2] = fminf(DOSING_CTRL_GradeRising(error_units, 2.0f, 3.8f),
+                         DOSING_CTRL_GradeFalling(error_units, 3.8f, 5.5f));
+  error_grade[3] = DOSING_CTRL_GradeRising(error_units, 3.8f, 5.5f);
+
+  if (error_units > 1.0f && error_grade[0] == 0.0f && error_grade[1] == 0.0f &&
+      error_grade[2] == 0.0f && error_grade[3] == 0.0f) {
+    error_grade[1] = 1.0f;
+  }
+
+  if (has_previous_error == 0U) {
+    trend_grade[0] = 0.0f;
+    trend_grade[1] = 1.0f;
+    trend_grade[2] = 0.0f;
+  } else {
+    trend_grade[0] = DOSING_CTRL_GradeRising(trend_units, 0.10f, 0.60f);
+    trend_grade[1] = fminf(DOSING_CTRL_GradeRising(trend_units, -0.55f, 0.0f),
+                           DOSING_CTRL_GradeFalling(trend_units, 0.0f, 0.55f));
+    trend_grade[2] = DOSING_CTRL_GradeFalling(trend_units, -0.60f, -0.10f);
+  }
+
+  for (uint8_t e = 0U; e < 4U; e++) {
+    for (uint8_t t = 0U; t < 3U; t++) {
+      float grade = fminf(error_grade[e], trend_grade[t]);
+      weighted_sum += grade * rule[e][t];
+      grade_sum += grade;
+    }
+  }
+
+  multiplier = (grade_sum > 0.0f) ? (weighted_sum / grade_sum) : 1.0f;
+  scaled_duty = (float)nominal_duty * multiplier;
+  scaled_duty = (scaled_duty * (float)effective_gain) / 100.0f;
+
+  if (scaled_duty < 1.0f) {
+    scaled_duty = 1.0f;
+  }
+  if (scaled_duty > 100.0f) {
+    scaled_duty = 100.0f;
+  }
+
+  return (uint8_t)(scaled_duty + 0.5f);
+}
+
+static uint8_t DOSING_CTRL_CalculateLinearDuty(float error, float hysteresis,
                                                uint8_t nominal_duty,
                                                uint8_t response_gain_percent) {
   float effective_hysteresis = hysteresis;
@@ -145,6 +276,11 @@ static uint16_t DOSING_CTRL_ApplyPHDosingOutput(uint8_t valve_id,
     return 0U;
   }
 
+  if (VALVES_GetMode(valve_id) == VALVE_MODE_DISABLED) {
+    VALVES_Close(valve_id);
+    return 0U;
+  }
+
   VALVES_SetDosingDuty(valve_id, duty_percent);
   if (VALVES_RequestOpen(valve_id) == 0U) {
     g_dosing.last_error = ERR_VALVE_STUCK;
@@ -165,6 +301,12 @@ static uint16_t DOSING_CTRL_ApplyECDosingRecipe(const ec_control_params_t *ec_pa
   }
 
   for (uint8_t i = 0; i < IRRIGATION_EC_CHANNEL_COUNT; i++) {
+    uint8_t valve_id = g_ec_dosing_valve_ids[i];
+
+    if (VALVES_GetMode(valve_id) == VALVE_MODE_DISABLED) {
+      VALVES_Close(valve_id);
+      continue;
+    }
     ratio_sum = (uint16_t)(ratio_sum + ec_params->recipe_ratio[i]);
   }
 
@@ -178,6 +320,11 @@ static uint16_t DOSING_CTRL_ApplyECDosingRecipe(const ec_control_params_t *ec_pa
   for (uint8_t i = 0; i < IRRIGATION_EC_CHANNEL_COUNT; i++) {
     uint8_t valve_id = g_ec_dosing_valve_ids[i];
     uint8_t valve_duty = 0U;
+
+    if (VALVES_GetMode(valve_id) == VALVE_MODE_DISABLED) {
+      VALVES_Close(valve_id);
+      continue;
+    }
 
     if (ec_params->recipe_ratio[i] != 0U) {
       float share =
@@ -226,6 +373,7 @@ static void DOSING_CTRL_StartDose(const ph_control_params_t *ph_params,
       (phase == DOSING_PHASE_PH) ? CTRL_STATE_PH_ADJUSTING : CTRL_STATE_EC_ADJUSTING;
   g_dosing.resume_state = resume_state;
   g_dosing.active_mask = 0U;
+  g_dosing.active_duty_percent = duty_percent;
   g_dosing.last_error = ERR_NONE;
 
   if (phase == DOSING_PHASE_PH && valve_id != 0U) {
@@ -241,6 +389,7 @@ static void DOSING_CTRL_StartDose(const ph_control_params_t *ph_params,
       g_dosing.phase = DOSING_PHASE_IDLE;
     }
     DOSING_CTRL_StopActiveOutputs();
+    g_dosing.active_duty_percent = 0U;
   }
 
   g_dosing.pending_duty_percent = 0U;
@@ -317,19 +466,31 @@ void DOSING_CTRL_Update(const ph_control_params_t *ph_params,
     if (ph_params->auto_adjust_enabled != 0U &&
         fabsf(ph_data->ph_value - ph_params->target) > ph_params->hysteresis) {
       float ph_error = fabsf(ph_data->ph_value - ph_params->target);
+      float previous_ph_error = g_dosing.last_ph_error;
+      uint8_t has_previous_ph_error = g_dosing.has_ph_error_sample;
       if (DOSING_CTRL_IsCorrectionLimitReached(DOSING_PHASE_PH,
                                                ph_params->max_correction_cycles) !=
           0U) {
         g_dosing.last_error = ERR_TIMEOUT;
+        g_dosing.last_ph_error = ph_error;
+        g_dosing.has_ph_error_sample = 1U;
         return;
       }
-      uint8_t ph_duty = DOSING_CTRL_CalculateDemandDuty(
-          ph_error, ph_params->hysteresis, ph_params->pwm_duty_percent,
-          ph_params->response_gain_percent);
+      uint8_t ph_duty =
+          (ph_params->dosing_logic_mode == DOSING_LOGIC_LINEAR)
+              ? DOSING_CTRL_CalculateLinearDuty(
+                    ph_error, ph_params->hysteresis, ph_params->pwm_duty_percent,
+                    ph_params->response_gain_percent)
+              : DOSING_CTRL_CalculateFuzzyDuty(
+                    ph_error, previous_ph_error, has_previous_ph_error,
+                    ph_params->hysteresis, ph_params->pwm_duty_percent,
+                    ph_params->response_gain_percent, 0U);
       uint8_t valve_id = (ph_data->ph_value > ph_params->target)
                              ? ph_params->acid_valve_id
                              : ph_params->base_valve_id;
 
+      g_dosing.last_ph_error = ph_error;
+      g_dosing.has_ph_error_sample = 1U;
       g_dosing.pending_duty_percent = ph_duty;
       DOSING_CTRL_StartDose(ph_params, ec_params, valve_id, DOSING_PHASE_PH,
                             ph_params->dose_time_ms, resume_state);
@@ -345,20 +506,34 @@ void DOSING_CTRL_Update(const ph_control_params_t *ph_params,
       return;
     }
     g_dosing.ph_correction_cycles = 0U;
+    g_dosing.last_ph_error = fabsf(ph_data->ph_value - ph_params->target);
+    g_dosing.has_ph_error_sample = 1U;
 
     if (ec_params->auto_adjust_enabled != 0U &&
         ec_data->ec_value < (ec_params->target - ec_params->hysteresis)) {
       float ec_error = ec_params->target - ec_data->ec_value;
+      float previous_ec_error = g_dosing.last_ec_error;
+      uint8_t has_previous_ec_error = g_dosing.has_ec_error_sample;
       if (DOSING_CTRL_IsCorrectionLimitReached(DOSING_PHASE_EC,
                                                ec_params->max_correction_cycles) !=
           0U) {
         g_dosing.last_error = ERR_TIMEOUT;
+        g_dosing.last_ec_error = ec_error;
+        g_dosing.has_ec_error_sample = 1U;
         return;
       }
-      uint8_t ec_duty = DOSING_CTRL_CalculateDemandDuty(
-          ec_error, ec_params->hysteresis, ec_params->pwm_duty_percent,
-          ec_params->response_gain_percent);
+      uint8_t ec_duty =
+          (ec_params->dosing_logic_mode == DOSING_LOGIC_LINEAR)
+              ? DOSING_CTRL_CalculateLinearDuty(
+                    ec_error, ec_params->hysteresis, ec_params->pwm_duty_percent,
+                    ec_params->response_gain_percent)
+              : DOSING_CTRL_CalculateFuzzyDuty(
+                    ec_error, previous_ec_error, has_previous_ec_error,
+                    ec_params->hysteresis, ec_params->pwm_duty_percent,
+                    ec_params->response_gain_percent, 1U);
 
+      g_dosing.last_ec_error = ec_error;
+      g_dosing.has_ec_error_sample = 1U;
       g_dosing.pending_duty_percent = ec_duty;
       DOSING_CTRL_StartDose(ph_params, ec_params, ec_duty, DOSING_PHASE_EC,
                             ec_params->dose_time_ms, resume_state);
@@ -373,6 +548,12 @@ void DOSING_CTRL_Update(const ph_control_params_t *ph_params,
       }
     } else {
       g_dosing.ec_correction_cycles = 0U;
+      if (ec_data->ec_value <= ec_params->target) {
+        g_dosing.last_ec_error = ec_params->target - ec_data->ec_value;
+      } else {
+        g_dosing.last_ec_error = 0.0f;
+      }
+      g_dosing.has_ec_error_sample = 1U;
     }
     break;
 
@@ -410,8 +591,17 @@ void DOSING_CTRL_Update(const ph_control_params_t *ph_params,
 }
 
 static void DOSING_CTRL_StopDose(void) {
+  dosing_phase_t completed_phase = g_dosing.phase;
+  uint8_t completed_duty = g_dosing.active_duty_percent;
+
   DOSING_CTRL_StopActiveOutputs();
+  if ((completed_phase == DOSING_PHASE_PH || completed_phase == DOSING_PHASE_EC) &&
+      completed_duty != 0U) {
+    g_dosing.last_completed_phase = completed_phase;
+    g_dosing.last_completed_duty_percent = completed_duty;
+  }
   g_dosing.pending_duty_percent = 0U;
+  g_dosing.active_duty_percent = 0U;
   g_dosing.phase = DOSING_PHASE_IDLE;
   g_dosing.dose_started_ms = 0U;
   g_dosing.mix_started_ms = 0U;
@@ -440,6 +630,9 @@ void DOSING_CTRL_GetStatus(dosing_controller_status_t *status) {
   status->phase = g_dosing.phase;
   status->active_mask = g_dosing.active_mask;
   status->pending_duty_percent = g_dosing.pending_duty_percent;
+  status->active_duty_percent = g_dosing.active_duty_percent;
+  status->last_completed_phase = g_dosing.last_completed_phase;
+  status->last_completed_duty_percent = g_dosing.last_completed_duty_percent;
   status->recommended_state = g_dosing.recommended_state;
   status->last_error = g_dosing.last_error;
 }

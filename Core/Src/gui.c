@@ -6,6 +6,7 @@
  */
 
 #include "main.h"
+#include "dosing_controller.h"
 #include "gui_layout.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,22 +25,27 @@
 #define GUI_PROGRAM_EDIT_ROW_STEP 27U
 #define GUI_PROGRAM_EDIT_ROW_COUNT 5U
 #define GUI_PROGRAM_EDIT_PAGE_COUNT 4U
+#define GUI_PARAMETERS_PAGE_COUNT 3U
 #define GUI_PROGRAM_EDIT_FOOTER_Y 202U
 #define GUI_PROGRAM_EDIT_BUTTON_W 96U
 #define GUI_PROGRAM_EDIT_BUTTON_H 36U
 #define GUI_PROGRAM_EDIT_BUTTON_GAP 6U
+#define GUI_MAIN_STATUS_Y 0U
+#define GUI_MAIN_STATUS_H 24U
+#define GUI_MAIN_PH_Y 30U
+#define GUI_MAIN_EC_Y 102U
+#define GUI_MAIN_RUNLINE_Y 174U
+#define GUI_MAIN_RUNLINE_H 18U
 
 typedef struct {
   ph_control_params_t ph_draft;
   ec_control_params_t ec_draft;
-  uint8_t selected_parcel;
-  uint32_t parcel_duration_sec;
-  uint8_t parcel_enabled;
   uint8_t selected_program;
   uint8_t manual_page;
   uint8_t programs_page;
   uint8_t program_edit_page;
   uint8_t params_page;
+  dosing_logic_mode_t dosing_logic_draft;
   irrigation_program_t program_draft;
   rtc_time_t rtc_time_draft;
   rtc_date_t rtc_date_draft;
@@ -50,22 +56,32 @@ typedef struct {
 static gui_handle_t h_gui = {0};
 static gui_runtime_state_t g_gui_state = {0};
 static uint8_t g_gui_dirty = 1U;
-static uint32_t g_gui_last_main_remaining_sec = UINT32_MAX;
 static control_state_t g_gui_last_main_state = CTRL_STATE_IDLE;
 static char g_gui_last_health_text[16] = {0};
 static char g_gui_last_ph_text[32] = {0};
 static char g_gui_last_ec_text[32] = {0};
-static char g_gui_last_datetime_text[32] = {0};
+static char g_gui_last_main_status_left[16] = {0};
+static char g_gui_last_main_status_center[8] = {0};
+static char g_gui_last_main_status_right[16] = {0};
+static char g_gui_last_main_run_line[40] = {0};
+static uint8_t g_gui_last_ph_pwm = UINT8_MAX;
+static uint8_t g_gui_last_ec_pwm = UINT8_MAX;
 
 static void GUI_DrawSplashScreen(void);
 static void GUI_LoadScreenState(screen_id_t screen_id);
+static void GUI_DrawDashboardMetric(uint16_t y, const char *label, float value,
+                                    const char *unit, float target,
+                                    uint8_t pwm_percent, lcd_color_t color);
+static void GUI_DrawDashboardPWMBar(uint16_t x, uint16_t y, uint16_t w,
+                                    uint8_t pwm_percent, lcd_color_t color);
+static void GUI_GetDashboardPWM(uint8_t *ph_pwm, uint8_t *ec_pwm);
+static void GUI_DrawDashboardPH(float ph_value);
+static void GUI_DrawDashboardEC(float ec_value);
+static void GUI_DrawMainStatusbar(void);
+static void GUI_DrawMainRunLine(void);
 static void GUI_DrawMainActions(void);
-static void GUI_DrawMainProgress(uint8_t parcel_id, uint32_t remaining_sec);
 static void GUI_DrawManualScreen(void);
 static void GUI_DrawSettingsScreen(void);
-static void GUI_DrawPHSettingsScreen(void);
-static void GUI_DrawECSettingsScreen(void);
-static void GUI_DrawParcelSettingsScreen(void);
 static void GUI_DrawCalibrationScreen(void);
 static void GUI_DrawTouchCalibrationOverlay(void);
 static void GUI_DrawSystemInfoScreen(void);
@@ -82,6 +98,9 @@ static void GUI_DrawFooterButton(uint16_t x, const char *text,
 static void GUI_FormatValueText(char *buffer, size_t buffer_size, float value,
                                 const char *unit);
 static void GUI_FormatFixed2(char *buffer, size_t buffer_size, float value);
+static void GUI_FormatClockText(char *buffer, size_t buffer_size);
+static void GUI_FormatMMSS(char *buffer, size_t buffer_size, uint32_t seconds);
+static void GUI_FormatMainRunLine(char *buffer, size_t buffer_size);
 static void GUI_DrawValueTextArea(uint16_t x, uint16_t y, uint16_t w,
                                   uint16_t h, const char *value_text,
                                   lcd_color_t bg);
@@ -91,26 +110,18 @@ static void GUI_DrawTextClipped(uint16_t x, uint16_t y, uint16_t w,
 static void GUI_DrawTextWrapped2(uint16_t x, uint16_t y, uint16_t w,
                                  const char *text, lcd_color_t fg,
                                  lcd_color_t bg, const lcd_font_t *font);
-static void GUI_FormatMMSS(char *buffer, size_t buffer_size,
-                           uint32_t seconds);
 static uint16_t GUI_AdjustHHMM(uint16_t hhmm, int16_t delta_minutes);
 #if BOARD_SENSOR_DEMO_MODE
 static uint8_t GUI_GetDemoValueIndex(void);
 static float GUI_GetDemoPHValue(void);
 static float GUI_GetDemoECValue(void);
 #endif
-static void GUI_DrawAdjustRow(uint16_t y, const char *label, float value,
-                              const char *unit);
 static void GUI_DrawUIntAdjustRow(uint16_t y, const char *label, uint32_t value,
                                   const char *unit);
+static void GUI_DrawUIntReadRow(uint16_t y, const char *label, uint32_t value,
+                                const char *unit);
 static void GUI_DrawParcelAdjustRow(const char *label, const char *value,
                                     uint16_t y);
-static void GUI_DrawMainModeLine(void);
-static void GUI_FormatMainDateTime(char *buffer, size_t buffer_size);
-static void GUI_DrawMainParcelLine(uint8_t current_parcel,
-                                   uint32_t remaining_sec);
-static uint32_t GUI_GetMainProgressDurationSec(uint8_t parcel_id,
-                                               uint32_t remaining_sec);
 static const char *GUI_GetValveLabel(uint8_t valve_id);
 static void GUI_DrawManualValveButton(uint8_t valve_id);
 static void GUI_DrawSystemInfoStateRow(void);
@@ -118,17 +129,16 @@ static void GUI_SetNotice(const char *text);
 static uint8_t GUI_GetPageCount(uint8_t item_count, uint8_t page_size);
 static uint8_t GUI_GetPageStartIndex(uint8_t page, uint8_t page_size);
 static const char *GUI_GetSystemHealthText(void);
-static const char *GUI_GetAutoModeName(auto_mode_t mode);
+static const char *GUI_GetDosingLogicName(dosing_logic_mode_t mode);
 static void GUI_FormatValveMask(char *buffer, size_t buffer_size, uint8_t mask);
 static void GUI_FormatDaysMask(char *buffer, size_t buffer_size, uint8_t mask);
+static uint8_t GUI_AddNextValveToMask(uint8_t mask);
+static uint8_t GUI_RemoveLastValveFromMask(uint8_t mask);
 static uint8_t GUI_PointInRect(const touch_point_t *point, uint16_t x,
                                uint16_t y, uint16_t w, uint16_t h);
 static void GUI_HandleMainTouch(const touch_point_t *point);
 static void GUI_HandleManualTouch(const touch_point_t *point);
 static void GUI_HandleSettingsTouch(const touch_point_t *point);
-static void GUI_HandlePHSettingsTouch(const touch_point_t *point);
-static void GUI_HandleECSettingsTouch(const touch_point_t *point);
-static void GUI_HandleParcelSettingsTouch(const touch_point_t *point);
 static void GUI_HandleCalibrationTouch(const touch_point_t *point);
 static void GUI_HandleSystemInfoTouch(const touch_point_t *point);
 static void GUI_HandleProgramsTouch(const touch_point_t *point);
@@ -139,8 +149,8 @@ static void GUI_HandleAlarmsTouch(const touch_point_t *point);
 static void GUI_HandleDosingTouch(const touch_point_t *point);
 static void GUI_HandleParametersTouch(const touch_point_t *point);
 static void GUI_RequestRedraw(void);
-static GPIO_PinState GUI_ReadDosingGPIO(uint8_t valve_id);
-static void GUI_ToggleDosingGPIO(uint8_t valve_id);
+static uint8_t GUI_IsDosingChannelEnabled(uint8_t valve_id);
+static void GUI_ToggleDosingChannelEnabled(uint8_t valve_id);
 
 /**
  * @brief  Initialize GUI
@@ -153,7 +163,6 @@ void GUI_Init(void) {
 
   h_gui.is_initialized = 1U;
   h_gui.current_screen = SCREEN_SPLASH;
-  g_gui_state.selected_parcel = 1U;
 
   GUI_DrawScreen(SCREEN_SPLASH);
   HAL_Delay(1000);
@@ -187,35 +196,28 @@ void GUI_Update(void) {
   }
 
   if (h_gui.current_screen == SCREEN_MAIN && g_gui_dirty == 0U) {
-    uint32_t remaining_sec = IRRIGATION_CTRL_GetRemainingTime();
-    char datetime_text[32] = {0};
     const char *health_text = GUI_GetSystemHealthText();
     control_state_t current_state = IRRIGATION_CTRL_GetState();
     uint8_t state_changed =
         (current_state != g_gui_last_main_state) ? 1U : 0U;
-
-    if (remaining_sec != g_gui_last_main_remaining_sec ||
-        state_changed != 0U) {
-      g_gui_last_main_remaining_sec = remaining_sec;
-      g_gui_last_main_state = current_state;
-      GUI_DrawMainParcelLine(IRRIGATION_CTRL_GetCurrentParcelId(), remaining_sec);
-      GUI_DrawMainProgress(IRRIGATION_CTRL_GetCurrentParcelId(), remaining_sec);
-    }
+    uint8_t ph_pwm = 0U;
+    uint8_t ec_pwm = 0U;
 
     if (state_changed != 0U ||
         strcmp(health_text, g_gui_last_health_text) != 0) {
       g_gui_last_main_state = current_state;
       snprintf(g_gui_last_health_text, sizeof(g_gui_last_health_text), "%s",
                health_text);
-      GUI_DrawStatusbar(IRRIGATION_CTRL_GetStateName(current_state),
-                        health_text);
     }
+    GUI_DrawMainStatusbar();
+    GUI_DrawMainRunLine();
 
-    GUI_FormatMainDateTime(datetime_text, sizeof(datetime_text));
-    if (strcmp(datetime_text, g_gui_last_datetime_text) != 0) {
-      snprintf(g_gui_last_datetime_text, sizeof(g_gui_last_datetime_text), "%s",
-               datetime_text);
-      GUI_DrawMainModeLine();
+    GUI_GetDashboardPWM(&ph_pwm, &ec_pwm);
+    if (ph_pwm != g_gui_last_ph_pwm || state_changed != 0U) {
+      GUI_DrawDashboardPH(IRRIGATION_CTRL_GetPH());
+    }
+    if (ec_pwm != g_gui_last_ec_pwm || state_changed != 0U) {
+      GUI_DrawDashboardEC(IRRIGATION_CTRL_GetEC());
     }
 
 #if BOARD_SENSOR_DEMO_MODE
@@ -237,11 +239,16 @@ void GUI_NavigateTo(screen_id_t screen_id) {
 
   GUI_LoadScreenState(screen_id);
   h_gui.current_screen = screen_id;
-  g_gui_last_main_remaining_sec = UINT32_MAX;
   g_gui_last_main_state = CTRL_STATE_IDLE;
   memset(g_gui_last_health_text, 0, sizeof(g_gui_last_health_text));
-  memset(g_gui_last_datetime_text, 0, sizeof(g_gui_last_datetime_text));
-  GUI_RequestRedraw();
+  memset(g_gui_last_main_status_left, 0, sizeof(g_gui_last_main_status_left));
+  memset(g_gui_last_main_status_center, 0,
+         sizeof(g_gui_last_main_status_center));
+  memset(g_gui_last_main_status_right, 0, sizeof(g_gui_last_main_status_right));
+  memset(g_gui_last_main_run_line, 0, sizeof(g_gui_last_main_run_line));
+  g_gui_last_ph_pwm = UINT8_MAX;
+  g_gui_last_ec_pwm = UINT8_MAX;
+  g_gui_dirty = 0U;
   GUI_DrawScreen(screen_id);
 }
 
@@ -249,8 +256,6 @@ void GUI_NavigateTo(screen_id_t screen_id) {
  * @brief  Draw Main Screen Layout
  */
 void GUI_DrawMainScreen(void) {
-  uint8_t current_parcel = IRRIGATION_CTRL_GetCurrentParcelId();
-  uint32_t remaining_sec = IRRIGATION_CTRL_GetRemainingTime();
 #if BOARD_SENSOR_DEMO_MODE
   float ph_value = GUI_GetDemoPHValue();
   float ec_value = GUI_GetDemoECValue();
@@ -260,37 +265,20 @@ void GUI_DrawMainScreen(void) {
 #endif
 
   LCD_Clear(LAYOUT_COLOR_BG);
-
-#if BOARD_SENSOR_DEMO_MODE
-  GUI_DrawStatusbar(IRRIGATION_CTRL_GetStateName(IRRIGATION_CTRL_GetState()),
-                    "DEMO");
-#else
-  GUI_DrawStatusbar(IRRIGATION_CTRL_GetStateName(IRRIGATION_CTRL_GetState()),
-                    GUI_GetSystemHealthText());
+  memset(g_gui_last_main_status_left, 0, sizeof(g_gui_last_main_status_left));
+  memset(g_gui_last_main_status_center, 0,
+         sizeof(g_gui_last_main_status_center));
+  memset(g_gui_last_main_status_right, 0, sizeof(g_gui_last_main_status_right));
+  memset(g_gui_last_main_run_line, 0, sizeof(g_gui_last_main_run_line));
+  GUI_DrawMainStatusbar();
+  GUI_DrawMainRunLine();
   g_gui_last_main_state = IRRIGATION_CTRL_GetState();
   snprintf(g_gui_last_health_text, sizeof(g_gui_last_health_text), "%s",
            GUI_GetSystemHealthText());
-#endif
 
-  /* Draw pH and EC value boxes */
-  GUI_DrawValueBox(LAYOUT_VALUE_BOX_X1, LAYOUT_VALUE_BOX_Y,
-                   LAYOUT_VALUE_BOX_WIDTH, LAYOUT_VALUE_BOX_HEIGHT,
-                   "PH", ph_value, "", LAYOUT_COLOR_PH, LAYOUT_COLOR_BG);
-  GUI_DrawValueBox(LAYOUT_VALUE_BOX_X2, LAYOUT_VALUE_BOX_Y,
-                   LAYOUT_VALUE_BOX_WIDTH, LAYOUT_VALUE_BOX_HEIGHT,
-                   "EC", ec_value, "MS", LAYOUT_COLOR_EC, LAYOUT_COLOR_BG);
-
-  /* Draw mode and parcel information lines */
-  GUI_DrawMainModeLine();
-  GUI_DrawMainParcelLine(current_parcel, remaining_sec);
-
-  /* Draw progress bar and action buttons */
-  GUI_DrawMainProgress(current_parcel, remaining_sec);
+  GUI_DrawDashboardPH(ph_value);
+  GUI_DrawDashboardEC(ec_value);
   GUI_DrawMainActions();
-
-  /* Draw separator line */
-  LCD_DrawHLine(0U, LAYOUT_ACTION_BUTTONS_Y - 2U,
-                LCD_GetDisplayWidth(), ILI9341_DARKGRAY);
 }
 
 /**
@@ -328,15 +316,6 @@ void GUI_ProcessTouch(touch_point_t *point) {
     break;
   case SCREEN_SETTINGS:
     GUI_HandleSettingsTouch(point);
-    break;
-  case SCREEN_PH_SETTINGS:
-    GUI_HandlePHSettingsTouch(point);
-    break;
-  case SCREEN_EC_SETTINGS:
-    GUI_HandleECSettingsTouch(point);
-    break;
-  case SCREEN_PARCEL_SETTINGS:
-    GUI_HandleParcelSettingsTouch(point);
     break;
   case SCREEN_CALIBRATION:
     GUI_HandleCalibrationTouch(point);
@@ -394,15 +373,6 @@ void GUI_DrawScreen(screen_id_t screen_id) {
   case SCREEN_SETTINGS:
     GUI_DrawSettingsScreen();
     break;
-  case SCREEN_PH_SETTINGS:
-    GUI_DrawPHSettingsScreen();
-    break;
-  case SCREEN_EC_SETTINGS:
-    GUI_DrawECSettingsScreen();
-    break;
-  case SCREEN_PARCEL_SETTINGS:
-    GUI_DrawParcelSettingsScreen();
-    break;
   case SCREEN_CALIBRATION:
     GUI_DrawCalibrationScreen();
     break;
@@ -444,7 +414,6 @@ void GUI_Redraw(void) {
   g_gui_dirty = 0U;
   GUI_DrawScreen((screen_id_t)h_gui.current_screen);
   if (h_gui.current_screen == SCREEN_MAIN) {
-    g_gui_last_main_remaining_sec = IRRIGATION_CTRL_GetRemainingTime();
     g_gui_last_main_state = IRRIGATION_CTRL_GetState();
     snprintf(g_gui_last_health_text, sizeof(g_gui_last_health_text), "%s",
              GUI_GetSystemHealthText());
@@ -493,18 +462,94 @@ void GUI_DrawStatusbar(const char *left_text, const char *right_text) {
   }
 }
 
+static void GUI_DrawMainStatusbar(void) {
+  char left_text[16];
+  char center_text[8];
+  char right_text[16];
+  uint16_t screen_width = LCD_GetDisplayWidth();
+  uint16_t center_w;
+  uint16_t center_x;
+  uint16_t right_w;
+  uint16_t right_x;
+
+  snprintf(left_text, sizeof(left_text), "%s",
+           IRRIGATION_CTRL_GetStateName(IRRIGATION_CTRL_GetState()));
+  GUI_FormatClockText(center_text, sizeof(center_text));
+#if BOARD_SENSOR_DEMO_MODE
+  snprintf(right_text, sizeof(right_text), "DEMO");
+#else
+  snprintf(right_text, sizeof(right_text), "%s", GUI_GetSystemHealthText());
+#endif
+
+  if (strcmp(left_text, g_gui_last_main_status_left) == 0 &&
+      strcmp(center_text, g_gui_last_main_status_center) == 0 &&
+      strcmp(right_text, g_gui_last_main_status_right) == 0) {
+    return;
+  }
+
+  LCD_FillRect(0U, GUI_MAIN_STATUS_Y, screen_width, GUI_MAIN_STATUS_H,
+               LAYOUT_COLOR_BG_LIGHT);
+  LCD_DrawString(8U, GUI_MAIN_STATUS_Y + 4U, left_text, LAYOUT_COLOR_TEXT,
+                 LAYOUT_COLOR_BG_LIGHT, LAYOUT_FONT_NORMAL);
+
+  center_w = (uint16_t)(strlen(center_text) * Font_16x8.width);
+  center_x = (uint16_t)((screen_width - center_w) / 2U);
+  LCD_DrawString(center_x, GUI_MAIN_STATUS_Y + 4U, center_text,
+                 LAYOUT_COLOR_ACCENT, LAYOUT_COLOR_BG_LIGHT,
+                 LAYOUT_FONT_NORMAL);
+
+  right_w = (uint16_t)(strlen(right_text) * Font_16x8.width);
+  right_x = (right_w + 8U < screen_width) ? (uint16_t)(screen_width - right_w - 8U)
+                                          : 8U;
+  LCD_DrawString(right_x, GUI_MAIN_STATUS_Y + 4U, right_text,
+                 LAYOUT_COLOR_TEXT, LAYOUT_COLOR_BG_LIGHT, LAYOUT_FONT_NORMAL);
+
+  snprintf(g_gui_last_main_status_left, sizeof(g_gui_last_main_status_left), "%s",
+           left_text);
+  snprintf(g_gui_last_main_status_center, sizeof(g_gui_last_main_status_center),
+           "%s", center_text);
+  snprintf(g_gui_last_main_status_right, sizeof(g_gui_last_main_status_right),
+           "%s", right_text);
+}
+
+static void GUI_DrawMainRunLine(void) {
+  char line[40];
+  uint16_t screen_width = LCD_GetDisplayWidth();
+  uint16_t text_w;
+  uint16_t text_x;
+
+  GUI_FormatMainRunLine(line, sizeof(line));
+  if (strcmp(line, g_gui_last_main_run_line) == 0) {
+    return;
+  }
+
+  LCD_FillRect(0U, GUI_MAIN_RUNLINE_Y, screen_width, GUI_MAIN_RUNLINE_H,
+               LAYOUT_COLOR_BG);
+  text_w = (uint16_t)(strlen(line) * Font_16x8.width);
+  text_x = (text_w + 8U < screen_width) ? (uint16_t)((screen_width - text_w) / 2U)
+                                        : 8U;
+  LCD_DrawString(text_x, GUI_MAIN_RUNLINE_Y + 1U, line, LAYOUT_COLOR_TEXT,
+                 LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
+  snprintf(g_gui_last_main_run_line, sizeof(g_gui_last_main_run_line), "%s",
+           line);
+}
+
 void GUI_UpdatePHValue(float ph) {
   char value_text[32];
+  uint8_t ph_pwm = 0U;
+  uint8_t ec_pwm = 0U;
 
   if (h_gui.is_initialized == 0U) return;
   GUI_FormatValueText(value_text, sizeof(value_text), ph, "");
-  if (strcmp(value_text, g_gui_last_ph_text) == 0) return;
+  GUI_GetDashboardPWM(&ph_pwm, &ec_pwm);
+  (void)ec_pwm;
+  if (strcmp(value_text, g_gui_last_ph_text) == 0 &&
+      ph_pwm == g_gui_last_ph_pwm) {
+    return;
+  }
 
   if (h_gui.current_screen == SCREEN_MAIN && g_gui_dirty == 0U) {
-    GUI_DrawValueTextArea(LAYOUT_VALUE_BOX_X1, LAYOUT_VALUE_BOX_Y,
-                          LAYOUT_VALUE_BOX_WIDTH, LAYOUT_VALUE_BOX_HEIGHT,
-                          value_text, LAYOUT_COLOR_BG);
-    snprintf(g_gui_last_ph_text, sizeof(g_gui_last_ph_text), "%s", value_text);
+    GUI_DrawDashboardPH(ph);
   } else if (h_gui.current_screen == SCREEN_MAIN) {
     GUI_RequestRedraw();
   }
@@ -512,16 +557,20 @@ void GUI_UpdatePHValue(float ph) {
 
 void GUI_UpdateECValue(float ec) {
   char value_text[32];
+  uint8_t ph_pwm = 0U;
+  uint8_t ec_pwm = 0U;
 
   if (h_gui.is_initialized == 0U) return;
   GUI_FormatValueText(value_text, sizeof(value_text), ec, "MS");
-  if (strcmp(value_text, g_gui_last_ec_text) == 0) return;
+  GUI_GetDashboardPWM(&ph_pwm, &ec_pwm);
+  (void)ph_pwm;
+  if (strcmp(value_text, g_gui_last_ec_text) == 0 &&
+      ec_pwm == g_gui_last_ec_pwm) {
+    return;
+  }
 
   if (h_gui.current_screen == SCREEN_MAIN && g_gui_dirty == 0U) {
-    GUI_DrawValueTextArea(LAYOUT_VALUE_BOX_X2, LAYOUT_VALUE_BOX_Y,
-                          LAYOUT_VALUE_BOX_WIDTH, LAYOUT_VALUE_BOX_HEIGHT,
-                          value_text, LAYOUT_COLOR_BG);
-    snprintf(g_gui_last_ec_text, sizeof(g_gui_last_ec_text), "%s", value_text);
+    GUI_DrawDashboardEC(ec);
   } else if (h_gui.current_screen == SCREEN_MAIN) {
     GUI_RequestRedraw();
   }
@@ -540,18 +589,15 @@ void GUI_UpdateValveStatus(uint8_t valve_id, uint8_t is_open) {
 }
 
 void GUI_UpdateIrrigationStatus(uint8_t is_running, uint8_t parcel_id) {
-  uint32_t remaining_sec = IRRIGATION_CTRL_GetRemainingTime();
-
   (void)is_running;
+  (void)parcel_id;
   if (h_gui.is_initialized == 0U) return;
 
   if (h_gui.current_screen == SCREEN_MAIN && g_gui_dirty == 0U) {
-    g_gui_last_main_remaining_sec = remaining_sec;
-    GUI_DrawStatusbar(IRRIGATION_CTRL_GetStateName(IRRIGATION_CTRL_GetState()),
-                      GUI_GetSystemHealthText());
-    GUI_DrawMainModeLine();
-    GUI_DrawMainParcelLine(parcel_id, remaining_sec);
-    GUI_DrawMainProgress(parcel_id, remaining_sec);
+    GUI_DrawMainStatusbar();
+    GUI_DrawMainRunLine();
+    GUI_DrawDashboardPH(IRRIGATION_CTRL_GetPH());
+    GUI_DrawDashboardEC(IRRIGATION_CTRL_GetEC());
     GUI_DrawMainActions();
   } else if (h_gui.current_screen == SCREEN_SYSTEM_INFO && g_gui_dirty == 0U) {
     GUI_DrawSystemInfoStateRow();
@@ -562,6 +608,125 @@ void GUI_UpdateIrrigationStatus(uint8_t is_running, uint8_t parcel_id) {
 }
 
 static void GUI_RequestRedraw(void) { g_gui_dirty = 1U; }
+
+static void GUI_GetDashboardPWM(uint8_t *ph_pwm, uint8_t *ec_pwm) {
+  ph_control_params_t ph_params;
+  ec_control_params_t ec_params;
+  dosing_controller_status_t dosing_status = {0};
+
+  IRRIGATION_CTRL_GetPHParams(&ph_params);
+  IRRIGATION_CTRL_GetECParams(&ec_params);
+  DOSING_CTRL_GetStatus(&dosing_status);
+
+  if (ph_pwm != NULL) {
+    *ph_pwm = ph_params.pwm_duty_percent;
+    if (dosing_status.phase == DOSING_PHASE_PH &&
+        dosing_status.active_duty_percent != 0U) {
+      *ph_pwm = dosing_status.active_duty_percent;
+    } else if (dosing_status.last_completed_phase == DOSING_PHASE_PH &&
+               dosing_status.last_completed_duty_percent != 0U) {
+      *ph_pwm = dosing_status.last_completed_duty_percent;
+    }
+    if (*ph_pwm > 100U) {
+      *ph_pwm = 100U;
+    }
+  }
+
+  if (ec_pwm != NULL) {
+    *ec_pwm = ec_params.pwm_duty_percent;
+    if (dosing_status.phase == DOSING_PHASE_EC &&
+        dosing_status.active_duty_percent != 0U) {
+      *ec_pwm = dosing_status.active_duty_percent;
+    } else if (dosing_status.last_completed_phase == DOSING_PHASE_EC &&
+               dosing_status.last_completed_duty_percent != 0U) {
+      *ec_pwm = dosing_status.last_completed_duty_percent;
+    }
+    if (*ec_pwm > 100U) {
+      *ec_pwm = 100U;
+    }
+  }
+}
+
+static void GUI_DrawDashboardPH(float ph_value) {
+  ph_control_params_t ph_params;
+  uint8_t ph_pwm = 0U;
+  uint8_t ec_pwm = 0U;
+
+  IRRIGATION_CTRL_GetPHParams(&ph_params);
+  GUI_GetDashboardPWM(&ph_pwm, &ec_pwm);
+  (void)ec_pwm;
+  GUI_DrawDashboardMetric(GUI_MAIN_PH_Y, "PH", ph_value, "", ph_params.target, ph_pwm,
+                          LAYOUT_COLOR_PH);
+}
+
+static void GUI_DrawDashboardEC(float ec_value) {
+  ec_control_params_t ec_params;
+  uint8_t ph_pwm = 0U;
+  uint8_t ec_pwm = 0U;
+
+  IRRIGATION_CTRL_GetECParams(&ec_params);
+  GUI_GetDashboardPWM(&ph_pwm, &ec_pwm);
+  (void)ph_pwm;
+  GUI_DrawDashboardMetric(GUI_MAIN_EC_Y, "EC", ec_value, "MS", ec_params.target, ec_pwm,
+                          LAYOUT_COLOR_EC);
+}
+
+static void GUI_DrawDashboardMetric(uint16_t y, const char *label, float value,
+                                    const char *unit, float target,
+                                    uint8_t pwm_percent, lcd_color_t color) {
+  char value_text[32];
+  char target_text[24];
+  char pwm_text[16];
+  uint16_t value_w = 136U;
+  uint16_t pwm_w = 82U;
+
+  GUI_FormatValueText(value_text, sizeof(value_text), value, unit);
+  GUI_FormatValueText(target_text, sizeof(target_text), target, unit);
+  snprintf(pwm_text, sizeof(pwm_text), "PWM %u", pwm_percent);
+
+  LCD_DrawRect(10U, y, 300U, 62U, color);
+  LCD_FillRect(18U, y + 8U, 48U, Font_24x16.height, LAYOUT_COLOR_BG);
+  LCD_DrawString(18U, y + 8U, label, color, LAYOUT_COLOR_BG, &Font_24x16);
+
+  LCD_FillRect(72U, y + 8U, value_w, Font_24x16.height, LAYOUT_COLOR_BG);
+  LCD_DrawString(72U, y + 8U, value_text, LAYOUT_COLOR_TEXT,
+                 LAYOUT_COLOR_BG, &Font_24x16);
+
+  LCD_FillRect(218U, y + 8U, pwm_w, Font_16x8.height, LAYOUT_COLOR_BG);
+  LCD_DrawString(218U, y + 8U, pwm_text, color, LAYOUT_COLOR_BG,
+                 LAYOUT_FONT_NORMAL);
+
+  LCD_FillRect(18U, y + 36U, 106U, Font_16x8.height, LAYOUT_COLOR_BG);
+  LCD_DrawString(18U, y + 36U, "SET", LAYOUT_COLOR_TEXT_DIM,
+                 LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
+  LCD_DrawString(52U, y + 36U, target_text, LAYOUT_COLOR_TEXT_DIM,
+                 LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
+  GUI_DrawDashboardPWMBar(132U, y + 40U, 168U, pwm_percent, color);
+
+  if (label != NULL && strcmp(label, "PH") == 0) {
+    snprintf(g_gui_last_ph_text, sizeof(g_gui_last_ph_text), "%s", value_text);
+    g_gui_last_ph_pwm = pwm_percent;
+  } else {
+    snprintf(g_gui_last_ec_text, sizeof(g_gui_last_ec_text), "%s", value_text);
+    g_gui_last_ec_pwm = pwm_percent;
+  }
+}
+
+static void GUI_DrawDashboardPWMBar(uint16_t x, uint16_t y, uint16_t w,
+                                    uint8_t pwm_percent, lcd_color_t color) {
+  uint16_t fill_w = 0U;
+
+  if (pwm_percent > 100U) {
+    pwm_percent = 100U;
+  }
+
+  LCD_DrawRect(x, y, w, 12U, LAYOUT_COLOR_TEXT_DIM);
+  LCD_FillRect(x + 1U, y + 1U, w - 2U, 10U, LAYOUT_COLOR_BG_LIGHT);
+  fill_w = (uint16_t)(((uint32_t)(w - 2U) * pwm_percent) / 100U);
+  if (fill_w != 0U) {
+    LCD_FillRect(x + 1U, y + 1U, fill_w, 10U, color);
+  }
+}
 
 static void GUI_FormatValueText(char *buffer, size_t buffer_size, float value,
                                 const char *unit) {
@@ -602,6 +767,73 @@ static void GUI_FormatFixed2(char *buffer, size_t buffer_size, float value) {
   } else {
     snprintf(buffer, buffer_size, "%lu.%02lu", (unsigned long)integer_part,
              (unsigned long)fraction_part);
+  }
+}
+
+static void GUI_FormatClockText(char *buffer, size_t buffer_size) {
+  rtc_time_t time = {0};
+
+  if (buffer == NULL || buffer_size == 0U) {
+    return;
+  }
+
+  if (RTC_IsInitialized() == 0U) {
+    snprintf(buffer, buffer_size, "--:--");
+    return;
+  }
+
+  RTC_GetTime(&time);
+  snprintf(buffer, buffer_size, "%02u:%02u", (unsigned int)time.hours,
+           (unsigned int)time.minutes);
+}
+
+static void GUI_FormatMMSS(char *buffer, size_t buffer_size, uint32_t seconds) {
+  uint32_t minutes;
+
+  if (buffer == NULL || buffer_size == 0U) {
+    return;
+  }
+
+  minutes = seconds / 60UL;
+  if (minutes > 99UL) {
+    minutes = 99UL;
+    seconds = 59UL;
+  }
+
+  snprintf(buffer, buffer_size, "%02lu:%02lu", (unsigned long)minutes,
+           (unsigned long)(seconds % 60UL));
+}
+
+static void GUI_FormatMainRunLine(char *buffer, size_t buffer_size) {
+  uint8_t program_id;
+  uint8_t parcel_id;
+  char remaining_text[8];
+
+  if (buffer == NULL || buffer_size == 0U) {
+    return;
+  }
+
+  if (IRRIGATION_CTRL_HasErrors() != 0U) {
+    snprintf(buffer, buffer_size, "ALARM %s", IRRIGATION_CTRL_GetActiveAlarmText());
+    return;
+  }
+
+  if (IRRIGATION_CTRL_IsRunning() == 0U) {
+    snprintf(buffer, buffer_size, "P- PARCEL - LEFT --:--");
+    return;
+  }
+
+  program_id = IRRIGATION_CTRL_GetActiveProgram();
+  parcel_id = IRRIGATION_CTRL_GetCurrentParcelId();
+  GUI_FormatMMSS(remaining_text, sizeof(remaining_text),
+                 IRRIGATION_CTRL_GetRemainingTime());
+
+  if (program_id != 0U) {
+    snprintf(buffer, buffer_size, "P%u PARCEL %u LEFT %s",
+             (unsigned int)program_id, (unsigned int)parcel_id, remaining_text);
+  } else {
+    snprintf(buffer, buffer_size, "MANUAL PARCEL %u LEFT %s",
+             (unsigned int)parcel_id, remaining_text);
   }
 }
 
@@ -695,16 +927,6 @@ static void GUI_DrawTextWrapped2(uint16_t x, uint16_t y, uint16_t w,
                       font);
 }
 
-static void GUI_FormatMMSS(char *buffer, size_t buffer_size,
-                           uint32_t seconds) {
-  if (buffer == NULL || buffer_size == 0U) {
-    return;
-  }
-
-  snprintf(buffer, buffer_size, "%02lu:%02lu",
-           (unsigned long)(seconds / 60U), (unsigned long)(seconds % 60U));
-}
-
 #if BOARD_SENSOR_DEMO_MODE
 static uint8_t GUI_GetDemoValueIndex(void) {
   return (uint8_t)((HAL_GetTick() / 1000U) % 5U);
@@ -723,28 +945,13 @@ static float GUI_GetDemoECValue(void) {
 
 static void GUI_LoadScreenState(screen_id_t screen_id) {
   switch (screen_id) {
-  case SCREEN_PH_SETTINGS:
-    IRRIGATION_CTRL_GetPHParams(&g_gui_state.ph_draft);
-    break;
-  case SCREEN_EC_SETTINGS:
-    IRRIGATION_CTRL_GetECParams(&g_gui_state.ec_draft);
-    break;
   case SCREEN_PARAMETERS:
     IRRIGATION_CTRL_GetPHParams(&g_gui_state.ph_draft);
     IRRIGATION_CTRL_GetECParams(&g_gui_state.ec_draft);
-    if (g_gui_state.params_page > 1U) {
+    g_gui_state.dosing_logic_draft = IRRIGATION_CTRL_GetDosingLogicMode();
+    if (g_gui_state.params_page >= GUI_PARAMETERS_PAGE_COUNT) {
       g_gui_state.params_page = 0U;
     }
-    break;
-  case SCREEN_PARCEL_SETTINGS:
-    if (g_gui_state.selected_parcel == 0U ||
-        g_gui_state.selected_parcel > VALVE_COUNT) {
-      g_gui_state.selected_parcel = 1U;
-    }
-    g_gui_state.parcel_duration_sec =
-        PARCELS_GetDuration(g_gui_state.selected_parcel);
-    g_gui_state.parcel_enabled =
-        PARCELS_IsEnabled(g_gui_state.selected_parcel);
     break;
   case SCREEN_CALIBRATION:
     GUI_SetNotice("READY");
@@ -801,91 +1008,6 @@ static void GUI_DrawFooterButton(uint16_t x, const char *text,
                  GUI_FOOTER_BUTTON_H, text, color);
 }
 
-static void GUI_DrawMainModeLine(void) {
-  char text[32];
-  char datetime_text[32];
-  uint16_t text_x = 0U;
-  uint16_t text_width = 0U;
-
-  LCD_FillRect(0U, LAYOUT_MODE_LINE_Y, LCD_GetDisplayWidth(),
-               LAYOUT_MODE_LINE_HEIGHT, LAYOUT_COLOR_BG);
-  snprintf(text, sizeof(text), "MODE %s",
-           GUI_GetAutoModeName(IRRIGATION_CTRL_GetAutoMode()));
-  LCD_DrawString(LAYOUT_GRID_MARGIN, LAYOUT_MODE_LINE_Y + 2U, text,
-                 LAYOUT_COLOR_TEXT, LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
-
-  GUI_FormatMainDateTime(datetime_text, sizeof(datetime_text));
-  snprintf(g_gui_last_datetime_text, sizeof(g_gui_last_datetime_text), "%s",
-           datetime_text);
-  text_width = (uint16_t)(strlen(datetime_text) * Font_16x8.width);
-  if (text_width < LCD_GetDisplayWidth()) {
-    text_x = (uint16_t)(LCD_GetDisplayWidth() - text_width - 10U);
-  }
-  LCD_DrawString(text_x, LAYOUT_MODE_LINE_Y + 2U, datetime_text,
-                 LAYOUT_COLOR_ACCENT, LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
-}
-
-static void GUI_FormatMainDateTime(char *buffer, size_t buffer_size) {
-  rtc_time_t time = {0};
-  rtc_date_t date = {0};
-
-  if (buffer == NULL || buffer_size == 0U) {
-    return;
-  }
-
-  if (RTC_IsInitialized() == 0U) {
-    snprintf(buffer, buffer_size, "--/--/-- --:--");
-    return;
-  }
-
-  RTC_GetTime(&time);
-  RTC_GetDate(&date);
-  snprintf(buffer, buffer_size, "%u/%u/%02u %02u:%02u",
-           (unsigned int)date.date, (unsigned int)date.month,
-           (unsigned int)date.year, (unsigned int)time.hours,
-           (unsigned int)time.minutes);
-}
-
-static void GUI_DrawMainParcelLine(uint8_t current_parcel,
-                                   uint32_t remaining_sec) {
-  char text[32];
-  char time_text[12];
-  uint32_t duration_sec = 0U;
-  control_state_t state = IRRIGATION_CTRL_GetState();
-
-  LCD_FillRect(0U, LAYOUT_PARCEL_LINE_Y, LCD_GetDisplayWidth(),
-               LAYOUT_PARCEL_LINE_HEIGHT, LAYOUT_COLOR_BG);
-
-  if (state == CTRL_STATE_WAITING) {
-    GUI_FormatMMSS(time_text, sizeof(time_text), remaining_sec);
-    LCD_DrawString(LAYOUT_GRID_MARGIN, LAYOUT_PARCEL_LINE_Y + 2U,
-                   "WAIT BETWEEN PARCELS", LAYOUT_COLOR_WARNING,
-                   LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
-    snprintf(text, sizeof(text), "LEFT %s", time_text);
-    LCD_DrawString(210U, LAYOUT_PARCEL_LINE_Y + 2U, text, LAYOUT_COLOR_TEXT,
-                   LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
-  } else if (state == CTRL_STATE_ERROR ||
-             state == CTRL_STATE_EMERGENCY_STOP) {
-    LCD_DrawString(LAYOUT_GRID_MARGIN, LAYOUT_PARCEL_LINE_Y + 2U,
-                   IRRIGATION_CTRL_GetActiveAlarmText(), LAYOUT_COLOR_ERROR,
-                   LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
-  } else if (IRRIGATION_CTRL_IsRunning() != 0U && current_parcel != 0U) {
-    duration_sec = GUI_GetMainProgressDurationSec(current_parcel, remaining_sec);
-    snprintf(text, sizeof(text), "PARCEL %u", current_parcel);
-    LCD_DrawString(LAYOUT_GRID_MARGIN, LAYOUT_PARCEL_LINE_Y + 2U, text,
-                   LAYOUT_COLOR_WARNING, LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
-
-    GUI_FormatMMSS(time_text, sizeof(time_text), duration_sec);
-    snprintf(text, sizeof(text), "DUR %s", time_text);
-    LCD_DrawString(180U, LAYOUT_PARCEL_LINE_Y + 2U, text, LAYOUT_COLOR_TEXT,
-                   LAYOUT_COLOR_BG, LAYOUT_FONT_NORMAL);
-  } else {
-    LCD_DrawString(LAYOUT_GRID_MARGIN, LAYOUT_PARCEL_LINE_Y + 2U,
-                   "SYSTEM IDLE", LAYOUT_COLOR_TEXT_DIM, LAYOUT_COLOR_BG,
-                   LAYOUT_FONT_NORMAL);
-  }
-}
-
 static void GUI_DrawMainActions(void) {
   const char *run_text =
       (IRRIGATION_CTRL_IsRunning() != 0U) ? "STOP" : "START";
@@ -905,56 +1027,6 @@ static void GUI_DrawMainActions(void) {
   GUI_DrawButton(start_x + (2U * (btn_w + LAYOUT_ACTION_BUTTON_GAP)), btn_y,
                  btn_w, LAYOUT_ACTION_BUTTON_HEIGHT, "SETTINGS",
                  LAYOUT_COLOR_PRIMARY_DARK);
-}
-
-static void GUI_DrawMainProgress(uint8_t parcel_id, uint32_t remaining_sec) {
-  char text[32];
-  char left_text[12];
-  char duration_text[12];
-  uint32_t duration_sec = 0U;
-  uint32_t elapsed_sec = 0U;
-  uint32_t progress_width = 0U;
-  uint16_t bar_x = LAYOUT_PROGRESSBAR_X;
-  uint16_t bar_y = LAYOUT_PROGRESSBAR_Y;
-  uint16_t bar_w = LAYOUT_PROGRESSBAR_WIDTH;
-  uint16_t bar_h = LAYOUT_PROGRESSBAR_HEIGHT;
-  control_state_t state = IRRIGATION_CTRL_GetState();
-
-  LCD_FillRect(bar_x, bar_y, bar_w, bar_h, LAYOUT_COLOR_BG);
-  LCD_DrawRect(bar_x, bar_y, bar_w, bar_h, LAYOUT_COLOR_TEXT_DIM);
-
-  if (state == CTRL_STATE_WAITING) {
-    GUI_FormatMMSS(left_text, sizeof(left_text), remaining_sec);
-    snprintf(text, sizeof(text), "WAIT %s", left_text);
-  } else if (parcel_id != 0U && IRRIGATION_CTRL_IsRunning() != 0U) {
-    duration_sec = GUI_GetMainProgressDurationSec(parcel_id, remaining_sec);
-    if (duration_sec != 0U) {
-      if (remaining_sec > duration_sec) {
-        remaining_sec = duration_sec;
-      }
-      elapsed_sec = duration_sec - remaining_sec;
-      progress_width =
-          (uint32_t)((bar_w - 2U) * elapsed_sec / duration_sec);
-    }
-
-    GUI_FormatMMSS(left_text, sizeof(left_text), remaining_sec);
-    GUI_FormatMMSS(duration_text, sizeof(duration_text), duration_sec);
-    snprintf(text, sizeof(text), "LEFT %s / %s", left_text, duration_text);
-  } else {
-    snprintf(text, sizeof(text), "READY");
-  }
-
-  if (progress_width > 0U) {
-    LCD_FillRect(bar_x + 1U, bar_y + 1U, (uint16_t)progress_width, bar_h - 2U,
-                 (state == CTRL_STATE_WAITING) ? LAYOUT_COLOR_WARNING
-                                               : LAYOUT_COLOR_PRIMARY);
-  }
-
-  /* Center text in progress bar */
-  uint16_t text_width = (uint16_t)(strlen(text) * Font_16x8.width);
-  uint16_t text_x = bar_x + (bar_w - text_width) / 2U;
-  LCD_DrawString(text_x, bar_y + 2U, text, LAYOUT_COLOR_TEXT, LAYOUT_COLOR_BG,
-                 LAYOUT_FONT_NORMAL);
 }
 
 static void GUI_DrawManualScreen(void) {
@@ -989,36 +1061,14 @@ static void GUI_DrawSettingsScreen(void) {
   GUI_DrawHeader("SETTINGS");
   GUI_DrawBackButton();
 
-  /* 2x5 Grid - 10 buttons */
-  GUI_DrawButton(10U, 38U, 145U, 30U, "PH", ILI9341_DARKGRAY);
-  GUI_DrawButton(165U, 38U, 145U, 30U, "EC", ILI9341_DARKGRAY);
-  GUI_DrawButton(10U, 74U, 145U, 30U, "PARCEL", ILI9341_DARKGRAY);
-  GUI_DrawButton(165U, 74U, 145U, 30U, "CALIB", ILI9341_DARKGRAY);
-  GUI_DrawButton(10U, 110U, 145U, 30U, "PROGRAM", ILI9341_DARKGRAY);
-  GUI_DrawButton(165U, 110U, 145U, 30U, "RTC", ILI9341_DARKGRAY);
-  GUI_DrawButton(10U, 146U, 145U, 30U, "AUTO", ILI9341_DARKGRAY);
-  GUI_DrawButton(165U, 146U, 145U, 30U, "ALARM", ILI9341_DARKGRAY);
-  GUI_DrawButton(10U, 182U, 145U, 30U, "DOSING", ILI9341_DARKGREEN);
-  GUI_DrawButton(165U, 182U, 145U, 30U, "PARAMS", ILI9341_NAVY);
-}
-
-static void GUI_DrawAdjustRow(uint16_t y, const char *label, float value,
-                              const char *unit) {
-  char value_text[24];
-
-  LCD_DrawString(10U, y + 8U, label, ILI9341_WHITE, ILI9341_BLACK, &Font_16x8);
-  LCD_DrawRect(110U, y, 90U, 30U, ILI9341_GRAY);
-
-  if (unit != NULL && unit[0] != '\0') {
-    snprintf(value_text, sizeof(value_text), "%.2f %s", value, unit);
-  } else {
-    snprintf(value_text, sizeof(value_text), "%.2f", value);
-  }
-
-  LCD_DrawString(118U, y + 7U, value_text, ILI9341_CYAN, ILI9341_BLACK,
-                 &Font_16x8);
-  GUI_DrawButton(215U, y, 40U, 30U, "-", ILI9341_DARKGRAY);
-  GUI_DrawButton(265U, y, 40U, 30U, "+", ILI9341_DARKGRAY);
+  GUI_DrawButton(10U, 38U, 145U, 30U, "PROGRAM", ILI9341_DARKGRAY);
+  GUI_DrawButton(165U, 38U, 145U, 30U, "PARAMS", ILI9341_DARKGRAY);
+  GUI_DrawButton(10U, 74U, 145U, 30U, "DOSING", ILI9341_DARKGRAY);
+  GUI_DrawButton(165U, 74U, 145U, 30U, "AUTO", ILI9341_DARKGRAY);
+  GUI_DrawButton(10U, 110U, 145U, 30U, "RTC", ILI9341_DARKGRAY);
+  GUI_DrawButton(165U, 110U, 145U, 30U, "CALIB", ILI9341_DARKGRAY);
+  GUI_DrawButton(10U, 146U, 145U, 30U, "ALARM", ILI9341_DARKGRAY);
+  GUI_DrawButton(165U, 146U, 145U, 30U, "INFO", ILI9341_DARKGRAY);
 }
 
 static void GUI_DrawUIntAdjustRow(uint16_t y, const char *label, uint32_t value,
@@ -1040,30 +1090,21 @@ static void GUI_DrawUIntAdjustRow(uint16_t y, const char *label, uint32_t value,
   GUI_DrawButton(265U, y, 40U, 30U, "+", ILI9341_DARKGRAY);
 }
 
-static void GUI_DrawPHSettingsScreen(void) {
-  LCD_Clear(ILI9341_BLACK);
-  GUI_DrawHeader("PH SETTINGS");
-  GUI_DrawBackButton();
+static void GUI_DrawUIntReadRow(uint16_t y, const char *label, uint32_t value,
+                                const char *unit) {
+  char value_text[24];
 
-  GUI_DrawAdjustRow(46U, "TARGET", g_gui_state.ph_draft.target, "");
-  GUI_DrawAdjustRow(88U, "MIN", g_gui_state.ph_draft.min_limit, "");
-  GUI_DrawAdjustRow(130U, "MAX", g_gui_state.ph_draft.max_limit, "");
+  LCD_DrawString(10U, y + 8U, label, ILI9341_WHITE, ILI9341_BLACK, &Font_16x8);
+  LCD_DrawRect(110U, y, 90U, 30U, ILI9341_GRAY);
 
-  GUI_DrawFooterButton(10U, "KAYDET", ILI9341_DARKGREEN);
-  GUI_DrawFooterButton(165U, "BACK", ILI9341_NAVY);
-}
+  if (unit != NULL && unit[0] != '\0') {
+    snprintf(value_text, sizeof(value_text), "%lu %s", (unsigned long)value, unit);
+  } else {
+    snprintf(value_text, sizeof(value_text), "%lu", (unsigned long)value);
+  }
 
-static void GUI_DrawECSettingsScreen(void) {
-  LCD_Clear(ILI9341_BLACK);
-  GUI_DrawHeader("EC SETTINGS");
-  GUI_DrawBackButton();
-
-  GUI_DrawAdjustRow(46U, "TARGET", g_gui_state.ec_draft.target, "MS");
-  GUI_DrawAdjustRow(88U, "MIN", g_gui_state.ec_draft.min_limit, "MS");
-  GUI_DrawAdjustRow(130U, "MAX", g_gui_state.ec_draft.max_limit, "MS");
-
-  GUI_DrawFooterButton(10U, "KAYDET", ILI9341_DARKGREEN);
-  GUI_DrawFooterButton(165U, "BACK", ILI9341_NAVY);
+  LCD_DrawString(118U, y + 7U, value_text, ILI9341_CYAN, ILI9341_BLACK,
+                 &Font_16x8);
 }
 
 static void GUI_DrawParametersScreen(void) {
@@ -1073,25 +1114,38 @@ static void GUI_DrawParametersScreen(void) {
 
   LCD_Clear(ILI9341_BLACK);
   if (g_gui_state.params_page == 0U) {
-    GUI_DrawHeader("PH PARAMS");
+    GUI_DrawHeader("PH DOSE");
+  } else if (g_gui_state.params_page == 1U) {
+    GUI_DrawHeader("EC DOSE");
   } else {
-    GUI_DrawHeader("EC PARAMS");
+    GUI_DrawHeader("DOSE TIMING");
   }
   GUI_DrawBackButton();
 
   if (g_gui_state.params_page == 0U) {
-    GUI_DrawUIntAdjustRow(46U, "FB DELAY", ph->feedback_delay_ms / 1000U, "S");
-    GUI_DrawUIntAdjustRow(88U, "GAIN", ph->response_gain_percent, "%");
-    GUI_DrawUIntAdjustRow(130U, "MAX CYC", ph->max_correction_cycles, "");
+    GUI_DrawUIntReadRow(46U, "PH PWM", ph->pwm_duty_percent, "PCT");
+    GUI_DrawUIntAdjustRow(88U, "PH GAIN", ph->response_gain_percent, "PCT");
+    GUI_DrawUIntAdjustRow(130U, "PH CYC", ph->max_correction_cycles, "");
   } else if (g_gui_state.params_page == 1U) {
-    GUI_DrawUIntAdjustRow(46U, "FB DELAY", ec->feedback_delay_ms / 1000U, "S");
-    GUI_DrawUIntAdjustRow(88U, "GAIN", ec->response_gain_percent, "%");
-    GUI_DrawUIntAdjustRow(130U, "MAX CYC", ec->max_correction_cycles, "");
+    GUI_DrawUIntReadRow(46U, "EC PWM", ec->pwm_duty_percent, "PCT");
+    GUI_DrawUIntAdjustRow(88U, "EC GAIN", ec->response_gain_percent, "PCT");
+    GUI_DrawUIntAdjustRow(130U, "EC CYC", ec->max_correction_cycles, "");
+  } else {
+    GUI_DrawUIntAdjustRow(46U, "PH WAIT", ph->feedback_delay_ms / 1000U, "S");
+    GUI_DrawUIntAdjustRow(88U, "EC WAIT", ec->feedback_delay_ms / 1000U, "S");
+    LCD_DrawString(10U, 138U, "LOGIC", ILI9341_WHITE, ILI9341_BLACK, &Font_16x8);
+    LCD_DrawRect(110U, 130U, 90U, 30U, ILI9341_GRAY);
+    GUI_DrawTextClipped(118U, 137U, 74U,
+                        GUI_GetDosingLogicName(g_gui_state.dosing_logic_draft),
+                        ILI9341_CYAN, ILI9341_BLACK, &Font_16x8);
+    GUI_DrawButton(215U, 130U, 40U, 30U, "-", ILI9341_DARKGRAY);
+    GUI_DrawButton(265U, 130U, 40U, 30U, "+", ILI9341_DARKGRAY);
   }
 
-  GUI_DrawFooterButton(10U, "KAYDET", ILI9341_DARKGREEN);
-  snprintf(page_text, sizeof(page_text), "PAGE %u/2",
-           (unsigned int)(g_gui_state.params_page + 1U));
+  GUI_DrawFooterButton(10U, "SAVE", ILI9341_DARKGREEN);
+  snprintf(page_text, sizeof(page_text), "PAGE %u/%u",
+           (unsigned int)(g_gui_state.params_page + 1U),
+           (unsigned int)GUI_PARAMETERS_PAGE_COUNT);
   GUI_DrawFooterButton(165U, page_text, ILI9341_NAVY);
 }
 
@@ -1102,29 +1156,6 @@ static void GUI_DrawParcelAdjustRow(const char *label, const char *value,
   LCD_DrawString(118U, y + 7U, value, ILI9341_CYAN, ILI9341_BLACK, &Font_16x8);
   GUI_DrawButton(215U, y, 40U, 30U, "-", ILI9341_DARKGRAY);
   GUI_DrawButton(265U, y, 40U, 30U, "+", ILI9341_DARKGRAY);
-}
-
-static void GUI_DrawParcelSettingsScreen(void) {
-  char parcel_text[24];
-  char duration_text[24];
-  char enabled_text[24];
-
-  LCD_Clear(ILI9341_BLACK);
-  GUI_DrawHeader("PARCEL SETTINGS");
-  GUI_DrawBackButton();
-
-  snprintf(parcel_text, sizeof(parcel_text), "P%u", g_gui_state.selected_parcel);
-  snprintf(duration_text, sizeof(duration_text), "%lu S",
-           (unsigned long)g_gui_state.parcel_duration_sec);
-  snprintf(enabled_text, sizeof(enabled_text), "%s",
-           (g_gui_state.parcel_enabled != 0U) ? "ON" : "OFF");
-
-  GUI_DrawParcelAdjustRow("PARCEL", parcel_text, 46U);
-  GUI_DrawParcelAdjustRow("DURATION", duration_text, 88U);
-  GUI_DrawParcelAdjustRow("ENABLED", enabled_text, 130U);
-
-  GUI_DrawFooterButton(10U, "KAYDET", ILI9341_DARKGREEN);
-  GUI_DrawFooterButton(165U, "BACK", ILI9341_NAVY);
 }
 
 static void GUI_DrawCalibrationScreen(void) {
@@ -1319,18 +1350,18 @@ static void GUI_DrawProgramEditScreen(void) {
     GUI_DrawParcelAdjustRow("EC", value_text,
                             (uint16_t)(GUI_PROGRAM_EDIT_ROW_Y0 + (4U * GUI_PROGRAM_EDIT_ROW_STEP)));
   } else if (g_gui_state.program_edit_page == 2U) {
-    snprintf(value_text, sizeof(value_text), "%u%%",
+    snprintf(value_text, sizeof(value_text), "%u PCT",
              g_gui_state.program_draft.fert_ratio_percent[0]);
     GUI_DrawParcelAdjustRow("FERT A", value_text, GUI_PROGRAM_EDIT_ROW_Y0);
-    snprintf(value_text, sizeof(value_text), "%u%%",
+    snprintf(value_text, sizeof(value_text), "%u PCT",
              g_gui_state.program_draft.fert_ratio_percent[1]);
     GUI_DrawParcelAdjustRow("FERT B", value_text,
                             (uint16_t)(GUI_PROGRAM_EDIT_ROW_Y0 + GUI_PROGRAM_EDIT_ROW_STEP));
-    snprintf(value_text, sizeof(value_text), "%u%%",
+    snprintf(value_text, sizeof(value_text), "%u PCT",
              g_gui_state.program_draft.fert_ratio_percent[2]);
     GUI_DrawParcelAdjustRow("FERT C", value_text,
                             (uint16_t)(GUI_PROGRAM_EDIT_ROW_Y0 + (2U * GUI_PROGRAM_EDIT_ROW_STEP)));
-    snprintf(value_text, sizeof(value_text), "%u%%",
+    snprintf(value_text, sizeof(value_text), "%u PCT",
              g_gui_state.program_draft.fert_ratio_percent[3]);
     GUI_DrawParcelAdjustRow("FERT D", value_text,
                             (uint16_t)(GUI_PROGRAM_EDIT_ROW_Y0 + (3U * GUI_PROGRAM_EDIT_ROW_STEP)));
@@ -1345,7 +1376,7 @@ static void GUI_DrawProgramEditScreen(void) {
   }
 
   GUI_DrawButton(footer_x, GUI_PROGRAM_EDIT_FOOTER_Y, GUI_PROGRAM_EDIT_BUTTON_W,
-                 GUI_PROGRAM_EDIT_BUTTON_H, "KAYDET", ILI9341_DARKGREEN);
+                 GUI_PROGRAM_EDIT_BUTTON_H, "SAVE", ILI9341_DARKGREEN);
   footer_x = (uint16_t)(footer_x + GUI_PROGRAM_EDIT_BUTTON_W +
                         GUI_PROGRAM_EDIT_BUTTON_GAP);
   GUI_DrawButton(footer_x, GUI_PROGRAM_EDIT_FOOTER_Y, GUI_PROGRAM_EDIT_BUTTON_W,
@@ -1381,7 +1412,7 @@ static void GUI_DrawRTCSettingsScreen(void) {
   LCD_DrawString(10U, 184U, "RIGHT +/- MIN MONTH", ILI9341_WHITE, ILI9341_BLACK,
                  &Font_8x5);
 
-  GUI_DrawFooterButton(10U, "KAYDET", ILI9341_DARKGREEN);
+  GUI_DrawFooterButton(10U, "SAVE", ILI9341_DARKGREEN);
   GUI_DrawFooterButton(165U, "SETTINGS", ILI9341_NAVY);
 }
 
@@ -1425,21 +1456,21 @@ static void GUI_DrawAlarmsScreen(void) {
 
   if (IRRIGATION_CTRL_HasErrors() == 0U) {
     if (gSystemStatus.rtc_ok == 0U) {
-      alarm_title = "RTC AYARI";
-      detail_text = "RTC ayari yok. Zamanli program baslatilamiyor.";
-      action_text = "Saat ve tarihi ayarlayin, sonra tekrar deneyin.";
+      alarm_title = "RTC SETUP";
+      detail_text = "RTC is not set. Scheduled program cannot start.";
+      action_text = "Set time/date, then try again.";
     } else if (gSystemStatus.ph_sensor_ok == 0U) {
       alarm_title = "PH SENSOR";
-      detail_text = "pH verisi gecersiz. Prob ve baglantiyi kontrol edin.";
-      action_text = "Sensor toparlaninca alarm ekrani kendini yeniler.";
+      detail_text = "Invalid pH data. Check probe and wiring.";
+      action_text = "Alarm screen updates after sensor recovers.";
     } else if (gSystemStatus.ec_sensor_ok == 0U) {
       alarm_title = "EC SENSOR";
-      detail_text = "EC verisi gecersiz. Prob ve baglantiyi kontrol edin.";
-      action_text = "Sensor toparlaninca alarm ekrani kendini yeniler.";
+      detail_text = "Invalid EC data. Check probe and wiring.";
+      action_text = "Alarm screen updates after sensor recovers.";
     } else if (gSystemStatus.eeprom_crc_ok == 0U) {
       alarm_title = "EEPROM CRC";
-      detail_text = "Kayitli ayar verisi dogrulanamadi.";
-      action_text = "Varsayilan ayarlari kontrol edip tekrar kaydedin.";
+      detail_text = "Saved settings could not be verified.";
+      action_text = "Check default settings and save again.";
     }
   }
 
@@ -1469,7 +1500,7 @@ static void GUI_DrawAlarmsScreen(void) {
   LCD_DrawString(10U, 194U, g_gui_state.notice, ILI9341_YELLOW, ILI9341_BLACK,
                  &Font_8x5);
 
-  GUI_DrawFooterButton(10U, "ONAYLA",
+  GUI_DrawFooterButton(10U, "ACK",
                        (ack_required != 0U) ? ILI9341_ORANGE
                                             : ILI9341_DARKGRAY);
   GUI_DrawFooterButton(165U, "RESET",
@@ -1537,41 +1568,8 @@ static const char *GUI_GetSystemHealthText(void) {
   return "BOOT";
 }
 
-static const char *GUI_GetAutoModeName(auto_mode_t mode) {
-  switch (mode) {
-  case AUTO_MODE_OFF:
-    return "OFF";
-  case AUTO_MODE_PH_EC_ONLY:
-    return "PH/EC";
-  case AUTO_MODE_PARCEL_ONLY:
-    return "PARCEL";
-  case AUTO_MODE_FULL_AUTO:
-    return "FULL";
-  case AUTO_MODE_SCHEDULED:
-    return "SCHED";
-  default:
-    return "NA";
-  }
-}
-
-static uint32_t GUI_GetMainProgressDurationSec(uint8_t parcel_id,
-                                               uint32_t remaining_sec) {
-  uint32_t elapsed_sec = IRRIGATION_CTRL_GetCurrentRunTime();
-  uint32_t duration_sec = 0U;
-
-  if (IRRIGATION_CTRL_IsRunning() == 0U) {
-    return 0U;
-  }
-
-  if (elapsed_sec != 0U || remaining_sec != 0U) {
-    duration_sec = elapsed_sec + remaining_sec;
-  }
-
-  if (duration_sec == 0U && parcel_id != 0U) {
-    duration_sec = PARCELS_GetDuration(parcel_id);
-  }
-
-  return duration_sec;
+static const char *GUI_GetDosingLogicName(dosing_logic_mode_t mode) {
+  return (mode == DOSING_LOGIC_LINEAR) ? "LINEAR" : "FUZZY";
 }
 
 static const char *GUI_GetValveLabel(uint8_t valve_id) {
@@ -1602,6 +1600,7 @@ static const char *GUI_GetValveLabel(uint8_t valve_id) {
 static void GUI_FormatValveMask(char *buffer, size_t buffer_size, uint8_t mask) {
   uint8_t first = 1U;
   size_t offset = 0U;
+  uint8_t valve = 1U;
 
   if (buffer == NULL || buffer_size == 0U) return;
 
@@ -1611,14 +1610,34 @@ static void GUI_FormatValveMask(char *buffer, size_t buffer_size, uint8_t mask) 
   }
 
   buffer[0] = '\0';
-  for (uint8_t i = 0U; i < VALVE_COUNT; i++) {
-    if ((mask & (1U << i)) == 0U) continue;
-    offset += (size_t)snprintf(buffer + offset, buffer_size - offset, "%sV%u",
-                               (first != 0U) ? "" : ",", i + 1U);
+  while (valve <= IRRIGATION_PROGRAM_VALVE_COUNT) {
+    uint8_t start = valve;
+    uint8_t end = valve;
+
+    if ((mask & (1U << (valve - 1U))) == 0U) {
+      valve++;
+      continue;
+    }
+
+    while (end < IRRIGATION_PROGRAM_VALVE_COUNT &&
+           (mask & (1U << end)) != 0U) {
+      end++;
+    }
+
+    if (start == end) {
+      offset += (size_t)snprintf(buffer + offset, buffer_size - offset, "%sV%u",
+                                 (first != 0U) ? "" : " ",
+                                 (unsigned int)start);
+    } else {
+      offset += (size_t)snprintf(buffer + offset, buffer_size - offset,
+                                 "%sV%u-%u", (first != 0U) ? "" : " ",
+                                 (unsigned int)start, (unsigned int)end);
+    }
     first = 0U;
     if (offset >= buffer_size) {
       break;
     }
+    valve = (uint8_t)(end + 1U);
   }
 }
 
@@ -1642,6 +1661,39 @@ static void GUI_FormatDaysMask(char *buffer, size_t buffer_size, uint8_t mask) {
       break;
     }
   }
+}
+
+static uint8_t GUI_AddNextValveToMask(uint8_t mask) {
+  uint8_t valid_mask = (uint8_t)((1UL << IRRIGATION_PROGRAM_VALVE_COUNT) - 1UL);
+
+  mask &= valid_mask;
+  if (mask == 0U) {
+    return 1U;
+  }
+
+  for (uint8_t valve = 1U; valve <= IRRIGATION_PROGRAM_VALVE_COUNT; valve++) {
+    uint8_t bit = (uint8_t)(1U << (valve - 1U));
+    if ((mask & bit) == 0U) {
+      return (uint8_t)(mask | bit);
+    }
+  }
+
+  return valid_mask;
+}
+
+static uint8_t GUI_RemoveLastValveFromMask(uint8_t mask) {
+  uint8_t valid_mask = (uint8_t)((1UL << IRRIGATION_PROGRAM_VALVE_COUNT) - 1UL);
+
+  mask &= valid_mask;
+  for (uint8_t valve = IRRIGATION_PROGRAM_VALVE_COUNT; valve >= 1U; valve--) {
+    uint8_t bit = (uint8_t)(1U << (valve - 1U));
+    if ((mask & bit) != 0U) {
+      mask &= (uint8_t)~bit;
+      break;
+    }
+  }
+
+  return (mask == 0U) ? 1U : mask;
 }
 
 static uint16_t GUI_AdjustHHMM(uint16_t hhmm, int16_t delta_minutes) {
@@ -1760,124 +1812,44 @@ static void GUI_HandleSettingsTouch(const touch_point_t *point) {
   }
 
   if (GUI_PointInRect(point, 10U, 38U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_PH_SETTINGS);
-    return;
-  }
-
-  if (GUI_PointInRect(point, 165U, 38U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_EC_SETTINGS);
-    return;
-  }
-
-  if (GUI_PointInRect(point, 10U, 74U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_PARCEL_SETTINGS);
-    return;
-  }
-
-  if (GUI_PointInRect(point, 165U, 74U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_CALIBRATION);
-    return;
-  }
-
-  if (GUI_PointInRect(point, 10U, 110U, 145U, 30U) != 0U) {
     GUI_NavigateTo(SCREEN_PROGRAMS);
     return;
   }
 
-  if (GUI_PointInRect(point, 165U, 110U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_RTC_SETTINGS);
+  if (GUI_PointInRect(point, 165U, 38U, 145U, 30U) != 0U) {
+    GUI_NavigateTo(SCREEN_PARAMETERS);
     return;
   }
 
-  if (GUI_PointInRect(point, 10U, 146U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_AUTO_MODE);
-    return;
-  }
-
-  if (GUI_PointInRect(point, 165U, 146U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_ALARMS);
-    return;
-  }
-
-  if (GUI_PointInRect(point, 10U, 182U, 145U, 30U) != 0U) {
+  if (GUI_PointInRect(point, 10U, 74U, 145U, 30U) != 0U) {
     GUI_NavigateTo(SCREEN_DOSING);
     return;
   }
 
-  if (GUI_PointInRect(point, 165U, 182U, 145U, 30U) != 0U) {
-    GUI_NavigateTo(SCREEN_PARAMETERS);
-    return;
-  }
-}
-
-static void GUI_HandlePHSettingsTouch(const touch_point_t *point) {
-  if (GUI_PointInRect(point, LCD_GetDisplayWidth() - 72U, GUI_BACK_BUTTON_Y,
-                      GUI_BACK_BUTTON_W, GUI_BACK_BUTTON_H) != 0U ||
-      GUI_PointInRect(point, 165U, GUI_FOOTER_BUTTON_Y, GUI_FOOTER_BUTTON_W,
-                      GUI_FOOTER_BUTTON_H) != 0U) {
-    GUI_NavigateTo(SCREEN_SETTINGS);
+  if (GUI_PointInRect(point, 165U, 74U, 145U, 30U) != 0U) {
+    GUI_NavigateTo(SCREEN_AUTO_MODE);
     return;
   }
 
-  if (GUI_PointInRect(point, 215U, 46U, 40U, 30U) != 0U) {
-    g_gui_state.ph_draft.target -= 0.1f;
-  } else if (GUI_PointInRect(point, 265U, 46U, 40U, 30U) != 0U) {
-    g_gui_state.ph_draft.target += 0.1f;
-  } else if (GUI_PointInRect(point, 215U, 88U, 40U, 30U) != 0U) {
-    g_gui_state.ph_draft.min_limit -= 0.1f;
-  } else if (GUI_PointInRect(point, 265U, 88U, 40U, 30U) != 0U) {
-    g_gui_state.ph_draft.min_limit += 0.1f;
-  } else if (GUI_PointInRect(point, 215U, 130U, 40U, 30U) != 0U) {
-    g_gui_state.ph_draft.max_limit -= 0.1f;
-  } else if (GUI_PointInRect(point, 265U, 130U, 40U, 30U) != 0U) {
-    g_gui_state.ph_draft.max_limit += 0.1f;
-  } else if (GUI_PointInRect(point, 10U, GUI_FOOTER_BUTTON_Y,
-                             GUI_FOOTER_BUTTON_W, GUI_FOOTER_BUTTON_H) != 0U) {
-    IRRIGATION_CTRL_SetPHParams(g_gui_state.ph_draft.target,
-                                g_gui_state.ph_draft.min_limit,
-                                g_gui_state.ph_draft.max_limit,
-                                g_gui_state.ph_draft.hysteresis);
-    IRRIGATION_CTRL_MaintenanceTask();
-    GUI_NavigateTo(SCREEN_SETTINGS);
+  if (GUI_PointInRect(point, 10U, 110U, 145U, 30U) != 0U) {
+    GUI_NavigateTo(SCREEN_RTC_SETTINGS);
     return;
   }
 
-  GUI_DrawPHSettingsScreen();
-}
-
-static void GUI_HandleECSettingsTouch(const touch_point_t *point) {
-  if (GUI_PointInRect(point, LCD_GetDisplayWidth() - 72U, GUI_BACK_BUTTON_Y,
-                      GUI_BACK_BUTTON_W, GUI_BACK_BUTTON_H) != 0U ||
-      GUI_PointInRect(point, 165U, GUI_FOOTER_BUTTON_Y, GUI_FOOTER_BUTTON_W,
-                      GUI_FOOTER_BUTTON_H) != 0U) {
-    GUI_NavigateTo(SCREEN_SETTINGS);
+  if (GUI_PointInRect(point, 165U, 110U, 145U, 30U) != 0U) {
+    GUI_NavigateTo(SCREEN_CALIBRATION);
     return;
   }
 
-  if (GUI_PointInRect(point, 215U, 46U, 40U, 30U) != 0U) {
-    g_gui_state.ec_draft.target -= 0.1f;
-  } else if (GUI_PointInRect(point, 265U, 46U, 40U, 30U) != 0U) {
-    g_gui_state.ec_draft.target += 0.1f;
-  } else if (GUI_PointInRect(point, 215U, 88U, 40U, 30U) != 0U) {
-    g_gui_state.ec_draft.min_limit -= 0.1f;
-  } else if (GUI_PointInRect(point, 265U, 88U, 40U, 30U) != 0U) {
-    g_gui_state.ec_draft.min_limit += 0.1f;
-  } else if (GUI_PointInRect(point, 215U, 130U, 40U, 30U) != 0U) {
-    g_gui_state.ec_draft.max_limit -= 0.1f;
-  } else if (GUI_PointInRect(point, 265U, 130U, 40U, 30U) != 0U) {
-    g_gui_state.ec_draft.max_limit += 0.1f;
-  } else if (GUI_PointInRect(point, 10U, GUI_FOOTER_BUTTON_Y,
-                             GUI_FOOTER_BUTTON_W, GUI_FOOTER_BUTTON_H) != 0U) {
-    IRRIGATION_CTRL_SetECParams(g_gui_state.ec_draft.target,
-                                g_gui_state.ec_draft.min_limit,
-                                g_gui_state.ec_draft.max_limit,
-                                g_gui_state.ec_draft.hysteresis);
-    IRRIGATION_CTRL_MaintenanceTask();
-    GUI_NavigateTo(SCREEN_SETTINGS);
+  if (GUI_PointInRect(point, 10U, 146U, 145U, 30U) != 0U) {
+    GUI_NavigateTo(SCREEN_ALARMS);
     return;
   }
 
-  GUI_DrawECSettingsScreen();
+  if (GUI_PointInRect(point, 165U, 146U, 145U, 30U) != 0U) {
+    GUI_NavigateTo(SCREEN_SYSTEM_INFO);
+    return;
+  }
 }
 
 static void GUI_HandleParametersTouch(const touch_point_t *point) {
@@ -1900,6 +1872,7 @@ static void GUI_HandleParametersTouch(const touch_point_t *point) {
     IRRIGATION_CTRL_SetECDosingResponse(ec->feedback_delay_ms,
                                         ec->response_gain_percent,
                                         ec->max_correction_cycles);
+    IRRIGATION_CTRL_SetDosingLogicMode(g_gui_state.dosing_logic_draft);
     IRRIGATION_CTRL_SaveDosingResponseParams();
     IRRIGATION_CTRL_MaintenanceTask();
     GUI_NavigateTo(SCREEN_SETTINGS);
@@ -1908,26 +1881,52 @@ static void GUI_HandleParametersTouch(const touch_point_t *point) {
 
   if (GUI_PointInRect(point, 165U, GUI_FOOTER_BUTTON_Y,
                       GUI_FOOTER_BUTTON_W, GUI_FOOTER_BUTTON_H) != 0U) {
-    g_gui_state.params_page = (uint8_t)((g_gui_state.params_page + 1U) % 2U);
+    g_gui_state.params_page =
+        (uint8_t)((g_gui_state.params_page + 1U) % GUI_PARAMETERS_PAGE_COUNT);
     GUI_DrawParametersScreen();
     return;
   }
 
-  minus_pressed = GUI_PointInRect(point, 215U, 46U, 40U, 30U);
-  plus_pressed = GUI_PointInRect(point, 265U, 46U, 40U, 30U);
-  if (minus_pressed != 0U || plus_pressed != 0U) {
-    uint32_t *delay_ms = (g_gui_state.params_page == 0U)
-                             ? &ph->feedback_delay_ms
-                             : &ec->feedback_delay_ms;
-    uint32_t delay_sec = *delay_ms / 1000U;
+  if (g_gui_state.params_page == 2U) {
+    minus_pressed = GUI_PointInRect(point, 215U, 46U, 40U, 30U);
+    plus_pressed = GUI_PointInRect(point, 265U, 46U, 40U, 30U);
+    if (minus_pressed != 0U || plus_pressed != 0U) {
+      uint32_t delay_sec = ph->feedback_delay_ms / 1000U;
 
-    if (minus_pressed != 0U && delay_sec >= 5U) {
-      delay_sec -= 5U;
-    } else if (plus_pressed != 0U && delay_sec <= 595U) {
-      delay_sec += 5U;
+      if (minus_pressed != 0U && delay_sec >= 5U) {
+        delay_sec -= 5U;
+      } else if (plus_pressed != 0U && delay_sec <= 595U) {
+        delay_sec += 5U;
+      }
+      ph->feedback_delay_ms = delay_sec * 1000U;
+      GUI_DrawParametersScreen();
+      return;
     }
-    *delay_ms = delay_sec * 1000U;
-    GUI_DrawParametersScreen();
+
+    minus_pressed = GUI_PointInRect(point, 215U, 88U, 40U, 30U);
+    plus_pressed = GUI_PointInRect(point, 265U, 88U, 40U, 30U);
+    if (minus_pressed != 0U || plus_pressed != 0U) {
+      uint32_t delay_sec = ec->feedback_delay_ms / 1000U;
+
+      if (minus_pressed != 0U && delay_sec >= 5U) {
+        delay_sec -= 5U;
+      } else if (plus_pressed != 0U && delay_sec <= 595U) {
+        delay_sec += 5U;
+      }
+      ec->feedback_delay_ms = delay_sec * 1000U;
+      GUI_DrawParametersScreen();
+      return;
+    }
+
+    minus_pressed = GUI_PointInRect(point, 215U, 130U, 40U, 30U);
+    plus_pressed = GUI_PointInRect(point, 265U, 130U, 40U, 30U);
+    if (minus_pressed != 0U || plus_pressed != 0U) {
+      g_gui_state.dosing_logic_draft =
+          (g_gui_state.dosing_logic_draft == DOSING_LOGIC_LINEAR)
+              ? DOSING_LOGIC_FUZZY
+              : DOSING_LOGIC_LINEAR;
+      GUI_DrawParametersScreen();
+    }
     return;
   }
 
@@ -1963,53 +1962,6 @@ static void GUI_HandleParametersTouch(const touch_point_t *point) {
     return;
   }
 
-  GUI_DrawParametersScreen();
-}
-
-static void GUI_HandleParcelSettingsTouch(const touch_point_t *point) {
-  uint8_t reload_selected_parcel = 0U;
-
-  if (GUI_PointInRect(point, LCD_GetDisplayWidth() - 72U, GUI_BACK_BUTTON_Y,
-                      GUI_BACK_BUTTON_W, GUI_BACK_BUTTON_H) != 0U ||
-      GUI_PointInRect(point, 165U, GUI_FOOTER_BUTTON_Y, GUI_FOOTER_BUTTON_W,
-                      GUI_FOOTER_BUTTON_H) != 0U) {
-    GUI_NavigateTo(SCREEN_SETTINGS);
-    return;
-  }
-
-  if (GUI_PointInRect(point, 215U, 46U, 40U, 30U) != 0U) {
-    if (g_gui_state.selected_parcel > 1U) {
-      g_gui_state.selected_parcel--;
-      reload_selected_parcel = 1U;
-    }
-  } else if (GUI_PointInRect(point, 265U, 46U, 40U, 30U) != 0U) {
-    if (g_gui_state.selected_parcel < VALVE_COUNT) {
-      g_gui_state.selected_parcel++;
-      reload_selected_parcel = 1U;
-    }
-  } else if (GUI_PointInRect(point, 215U, 88U, 40U, 30U) != 0U) {
-    if (g_gui_state.parcel_duration_sec > 30U) {
-      g_gui_state.parcel_duration_sec -= 30U;
-    }
-  } else if (GUI_PointInRect(point, 265U, 88U, 40U, 30U) != 0U) {
-    g_gui_state.parcel_duration_sec += 30U;
-  } else if (GUI_PointInRect(point, 215U, 130U, 40U, 30U) != 0U ||
-             GUI_PointInRect(point, 265U, 130U, 40U, 30U) != 0U) {
-    g_gui_state.parcel_enabled =
-        (g_gui_state.parcel_enabled == 0U) ? 1U : 0U;
-  } else if (GUI_PointInRect(point, 10U, GUI_FOOTER_BUTTON_Y,
-                             GUI_FOOTER_BUTTON_W, GUI_FOOTER_BUTTON_H) != 0U) {
-    IRRIGATION_CTRL_SetParcelConfig(g_gui_state.selected_parcel,
-                                    g_gui_state.parcel_duration_sec,
-                                    g_gui_state.parcel_enabled);
-    GUI_NavigateTo(SCREEN_SETTINGS);
-    return;
-  }
-
-  if (reload_selected_parcel != 0U) {
-    GUI_LoadScreenState(SCREEN_PARCEL_SETTINGS);
-  }
-  GUI_DrawParcelSettingsScreen();
 }
 
 static void GUI_HandleCalibrationTouch(const touch_point_t *point) {
@@ -2167,8 +2119,8 @@ static void GUI_HandleProgramEditTouch(const touch_point_t *point) {
   for (uint8_t row = 0U; row < GUI_PROGRAM_EDIT_ROW_COUNT; row++) {
     uint16_t y =
         (uint16_t)(GUI_PROGRAM_EDIT_ROW_Y0 + (row * GUI_PROGRAM_EDIT_ROW_STEP));
-    uint8_t minus_pressed = GUI_PointInRect(point, 215U, y, 40U, 30U);
-    uint8_t plus_pressed = GUI_PointInRect(point, 265U, y, 40U, 30U);
+    uint8_t minus_pressed = GUI_PointInRect(point, 205U, y, 55U, 30U);
+    uint8_t plus_pressed = GUI_PointInRect(point, 260U, y, 55U, 30U);
 
     if (minus_pressed == 0U && plus_pressed == 0U) continue;
 
@@ -2189,13 +2141,11 @@ static void GUI_HandleProgramEditTouch(const touch_point_t *point) {
         break;
       case 3U:
         if (minus_pressed != 0U) {
-          g_gui_state.program_draft.valve_mask >>= 1U;
+          g_gui_state.program_draft.valve_mask =
+              GUI_RemoveLastValveFromMask(g_gui_state.program_draft.valve_mask);
         } else {
           g_gui_state.program_draft.valve_mask =
-              (uint8_t)((g_gui_state.program_draft.valve_mask << 1U) | 1U);
-        }
-        if (g_gui_state.program_draft.valve_mask == 0U) {
-          g_gui_state.program_draft.valve_mask = 1U;
+              GUI_AddNextValveToMask(g_gui_state.program_draft.valve_mask);
         }
         break;
       case 4U:
@@ -2371,11 +2321,11 @@ static void GUI_HandleAlarmsTouch(const touch_point_t *point) {
   if (GUI_PointInRect(point, 165U, GUI_FOOTER_BUTTON_Y, GUI_FOOTER_BUTTON_W,
                       GUI_FOOTER_BUTTON_H) != 0U) {
     if (IRRIGATION_CTRL_ResetAlarm() != 0U) {
-      GUI_SetNotice("ALARM TEMIZLENDI");
+      GUI_SetNotice("ALARM CLEARED");
       BUZZER_BeepSuccess();
     } else if (IRRIGATION_CTRL_CanResetAlarm() == 0U &&
                IRRIGATION_CTRL_HasErrors() != 0U) {
-      GUI_SetNotice("ONCE ONAYLA");
+      GUI_SetNotice("ACK FIRST");
       BUZZER_BeepWarning();
     } else {
       GUI_SetNotice(IRRIGATION_CTRL_GetActiveAlarmText());
@@ -2419,7 +2369,7 @@ static void GUI_HandleDosingTouch(const touch_point_t *point) {
 
   /* ACID Valve - Top left: (10,45) to (155,85) */
   if (GUI_PointInRect(point, start_x, start_y, btn_width, btn_height) != 0U) {
-    GUI_ToggleDosingGPIO(DOSING_VALVE_ACID_ID);
+    GUI_ToggleDosingChannelEnabled(DOSING_VALVE_ACID_ID);
     HAL_Delay(50);
     GUI_DrawDosingScreen();
     return;
@@ -2427,7 +2377,7 @@ static void GUI_HandleDosingTouch(const touch_point_t *point) {
 
   /* FERT A Valve - Top right: (163,45) to (308,85) */
   if (GUI_PointInRect(point, start_x + btn_width + btn_gap, start_y, btn_width, btn_height) != 0U) {
-    GUI_ToggleDosingGPIO(DOSING_VALVE_FERT_A_ID);
+    GUI_ToggleDosingChannelEnabled(DOSING_VALVE_FERT_A_ID);
     HAL_Delay(50);
     GUI_DrawDosingScreen();
     return;
@@ -2435,7 +2385,7 @@ static void GUI_HandleDosingTouch(const touch_point_t *point) {
 
   /* FERT B Valve - Middle left: (10,93) to (155,133) */
   if (GUI_PointInRect(point, start_x, start_y + btn_height + btn_gap, btn_width, btn_height) != 0U) {
-    GUI_ToggleDosingGPIO(DOSING_VALVE_FERT_B_ID);
+    GUI_ToggleDosingChannelEnabled(DOSING_VALVE_FERT_B_ID);
     HAL_Delay(50);
     GUI_DrawDosingScreen();
     return;
@@ -2443,7 +2393,7 @@ static void GUI_HandleDosingTouch(const touch_point_t *point) {
 
   /* FERT C Valve - Middle right: (163,93) to (308,133) */
   if (GUI_PointInRect(point, start_x + btn_width + btn_gap, start_y + btn_height + btn_gap, btn_width, btn_height) != 0U) {
-    GUI_ToggleDosingGPIO(DOSING_VALVE_FERT_C_ID);
+    GUI_ToggleDosingChannelEnabled(DOSING_VALVE_FERT_C_ID);
     HAL_Delay(50);
     GUI_DrawDosingScreen();
     return;
@@ -2451,7 +2401,7 @@ static void GUI_HandleDosingTouch(const touch_point_t *point) {
 
   /* FERT D Valve - Bottom left: (10,141) to (155,181) */
   if (GUI_PointInRect(point, start_x, start_y + 2 * (btn_height + btn_gap), btn_width, btn_height) != 0U) {
-    GUI_ToggleDosingGPIO(DOSING_VALVE_FERT_D_ID);
+    GUI_ToggleDosingChannelEnabled(DOSING_VALVE_FERT_D_ID);
     HAL_Delay(50);
     GUI_DrawDosingScreen();
     return;
@@ -2475,57 +2425,61 @@ static void GUI_DrawDosingScreen(void) {
   GUI_DrawBackButton();
 
   VALVES_GetDosingStatus(DOSING_VALVE_ACID_ID, &dosing_status);
-  GPIO_PinState acid_gpio = GUI_ReadDosingGPIO(DOSING_VALVE_ACID_ID);
-  lcd_color_t acid_color = (acid_gpio == GPIO_PIN_SET) ?
-                           LAYOUT_COLOR_SUCCESS : ILI9341_DARKGRAY;
+  uint8_t acid_enabled = GUI_IsDosingChannelEnabled(DOSING_VALVE_ACID_ID);
+  lcd_color_t acid_color = (acid_enabled != 0U) ? LAYOUT_COLOR_SUCCESS
+                                                : ILI9341_DARKGRAY;
 
   GUI_DrawButton(start_x, start_y, btn_width, btn_height, "ACID", acid_color);
-  snprintf(label, sizeof(label), "%02uHZ %3u%%",
-           dosing_status.frequency_hz, dosing_status.applied_duty_percent);
+  snprintf(label, sizeof(label), "%s %02uHZ",
+           (acid_enabled != 0U) ? "ENABLED" : "DISABLED",
+           dosing_status.frequency_hz);
   LCD_DrawString(start_x + 6U, start_y + 24U, label, LAYOUT_COLOR_TEXT, acid_color, LAYOUT_FONT_SMALL);
 
   VALVES_GetDosingStatus(DOSING_VALVE_FERT_A_ID, &dosing_status);
-  GPIO_PinState fert_a_gpio = GUI_ReadDosingGPIO(DOSING_VALVE_FERT_A_ID);
-  lcd_color_t fert_a_color = (fert_a_gpio == GPIO_PIN_SET) ?
-                             LAYOUT_COLOR_SUCCESS : ILI9341_DARKGRAY;
+  uint8_t fert_a_enabled = GUI_IsDosingChannelEnabled(DOSING_VALVE_FERT_A_ID);
+  lcd_color_t fert_a_color = (fert_a_enabled != 0U) ? LAYOUT_COLOR_SUCCESS
+                                                    : ILI9341_DARKGRAY;
 
   GUI_DrawButton(start_x + btn_width + btn_gap, start_y, btn_width, btn_height, "FERT A", fert_a_color);
-  snprintf(label, sizeof(label), "%02uHZ %3u%%",
-           dosing_status.frequency_hz, dosing_status.applied_duty_percent);
+  snprintf(label, sizeof(label), "%s %02uHZ",
+           (fert_a_enabled != 0U) ? "ENABLED" : "DISABLED",
+           dosing_status.frequency_hz);
   LCD_DrawString(start_x + btn_width + btn_gap + 6U, start_y + 24U, label, LAYOUT_COLOR_TEXT, fert_a_color, LAYOUT_FONT_SMALL);
 
   VALVES_GetDosingStatus(DOSING_VALVE_FERT_B_ID, &dosing_status);
-  GPIO_PinState fert_b_gpio = GUI_ReadDosingGPIO(DOSING_VALVE_FERT_B_ID);
-  lcd_color_t fert_b_color = (fert_b_gpio == GPIO_PIN_SET) ?
-                             LAYOUT_COLOR_SUCCESS : ILI9341_DARKGRAY;
+  uint8_t fert_b_enabled = GUI_IsDosingChannelEnabled(DOSING_VALVE_FERT_B_ID);
+  lcd_color_t fert_b_color = (fert_b_enabled != 0U) ? LAYOUT_COLOR_SUCCESS
+                                                    : ILI9341_DARKGRAY;
 
   GUI_DrawButton(start_x, start_y + btn_height + btn_gap, btn_width, btn_height, "FERT B", fert_b_color);
-  snprintf(label, sizeof(label), "%02uHZ %3u%%",
-           dosing_status.frequency_hz, dosing_status.applied_duty_percent);
+  snprintf(label, sizeof(label), "%s %02uHZ",
+           (fert_b_enabled != 0U) ? "ENABLED" : "DISABLED",
+           dosing_status.frequency_hz);
   LCD_DrawString(start_x + 6U, start_y + btn_height + btn_gap + 24U, label, LAYOUT_COLOR_TEXT, fert_b_color, LAYOUT_FONT_SMALL);
 
   VALVES_GetDosingStatus(DOSING_VALVE_FERT_C_ID, &dosing_status);
-  GPIO_PinState fert_c_gpio = GUI_ReadDosingGPIO(DOSING_VALVE_FERT_C_ID);
-  lcd_color_t fert_c_color = (fert_c_gpio == GPIO_PIN_SET) ?
-                             LAYOUT_COLOR_SUCCESS : ILI9341_DARKGRAY;
+  uint8_t fert_c_enabled = GUI_IsDosingChannelEnabled(DOSING_VALVE_FERT_C_ID);
+  lcd_color_t fert_c_color = (fert_c_enabled != 0U) ? LAYOUT_COLOR_SUCCESS
+                                                    : ILI9341_DARKGRAY;
 
   GUI_DrawButton(start_x + btn_width + btn_gap, start_y + btn_height + btn_gap, btn_width, btn_height, "FERT C", fert_c_color);
-  snprintf(label, sizeof(label), "%02uHZ %3u%%",
-           dosing_status.frequency_hz, dosing_status.applied_duty_percent);
+  snprintf(label, sizeof(label), "%s %02uHZ",
+           (fert_c_enabled != 0U) ? "ENABLED" : "DISABLED",
+           dosing_status.frequency_hz);
   LCD_DrawString(start_x + btn_width + btn_gap + 6U, start_y + btn_height + btn_gap + 24U, label, LAYOUT_COLOR_TEXT, fert_c_color, LAYOUT_FONT_SMALL);
 
   VALVES_GetDosingStatus(DOSING_VALVE_FERT_D_ID, &dosing_status);
-  GPIO_PinState fert_d_gpio = GUI_ReadDosingGPIO(DOSING_VALVE_FERT_D_ID);
-  lcd_color_t fert_d_color = (fert_d_gpio == GPIO_PIN_SET) ?
-                             LAYOUT_COLOR_SUCCESS : ILI9341_DARKGRAY;
+  uint8_t fert_d_enabled = GUI_IsDosingChannelEnabled(DOSING_VALVE_FERT_D_ID);
+  lcd_color_t fert_d_color = (fert_d_enabled != 0U) ? LAYOUT_COLOR_SUCCESS
+                                                    : ILI9341_DARKGRAY;
 
   GUI_DrawButton(start_x, start_y + 2 * (btn_height + btn_gap), btn_width, btn_height, "FERT D", fert_d_color);
-  snprintf(label, sizeof(label), "%02uHZ %3u%%",
-           dosing_status.frequency_hz, dosing_status.applied_duty_percent);
+  snprintf(label, sizeof(label), "%s %02uHZ",
+           (fert_d_enabled != 0U) ? "ENABLED" : "DISABLED",
+           dosing_status.frequency_hz);
   LCD_DrawString(start_x + 6U, start_y + 2 * (btn_height + btn_gap) + 24U, label, LAYOUT_COLOR_TEXT, fert_d_color, LAYOUT_FONT_SMALL);
 
-  /* Info text */
-  LCD_DrawString(10U, 185U, "Manual dosing override", LAYOUT_COLOR_TEXT_DIM,
+  LCD_DrawString(10U, 185U, "Tap valve to enable/disable", LAYOUT_COLOR_TEXT_DIM,
                  LAYOUT_COLOR_BG, LAYOUT_FONT_SMALL);
 
   /* Footer buttons */
@@ -2533,17 +2487,13 @@ static void GUI_DrawDosingScreen(void) {
   GUI_DrawFooterButton(165U, "SETTINGS", ILI9341_DARKGRAY);
 }
 
-static GPIO_PinState GUI_ReadDosingGPIO(uint8_t valve_id) {
-  return (VALVES_IsDosingEnabled(valve_id) != 0U) ? GPIO_PIN_SET
-                                                   : GPIO_PIN_RESET;
+static uint8_t GUI_IsDosingChannelEnabled(uint8_t valve_id) {
+  return IRRIGATION_CTRL_IsDosingValveEnabled(valve_id);
 }
 
-static void GUI_ToggleDosingGPIO(uint8_t valve_id) {
-  GPIO_PinState current = GUI_ReadDosingGPIO(valve_id);
+static void GUI_ToggleDosingChannelEnabled(uint8_t valve_id) {
+  uint8_t enabled = GUI_IsDosingChannelEnabled(valve_id);
 
-  if (current == GPIO_PIN_SET) {
-    VALVES_Close(valve_id);
-  } else {
-    VALVES_Open(valve_id);
-  }
+  IRRIGATION_CTRL_SetDosingValveEnabled(valve_id,
+                                        (enabled == 0U) ? 1U : 0U);
 }

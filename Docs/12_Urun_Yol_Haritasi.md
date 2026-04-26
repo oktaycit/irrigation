@@ -8,6 +8,12 @@ Temel kural:
 - Yol haritasi once `Core` segmentini sahaya guvenle cikaracak sekilde ilerlemeli, sonra `Insight` seviyesinin ayirt edici degerini acmalidir.
 - Her fazda "hangi segmente dogrudan deger uretiyoruz?" sorusu net cevaplanmalidir.
 
+2026-04-26 karar guncellemesi:
+
+- `Insight` surumunun ana arayuz ve operasyon katmani Raspbian/Raspberry Pi OS tarzi bir Linux edge arayuzu uzerinden ilerlemelidir.
+- STM32 TFT ekrani `Core` ve temel yerel emniyet/servis akisi icin korunur; `Insight` dashboard, log, recete, commissioning ve raporlama deneyimi gateway uzerindeki web arayuzune tasinir.
+- Bu nedenle `Raspberry Pi` benzeri edge katmani artik gec Faz 4 eklentisi degil, `Insight` yolunun erken omurgasidir.
+
 ## 1. Hedef Segmentler
 
 ### `Core`
@@ -99,10 +105,15 @@ Hedef segment:
 
 Ana hedef:
 
-- Ortak platformu veri odakli kararlar icin hazirlamak
+- Ortak platformu Linux edge arayuzu ve veri odakli kararlar icin hazirlamak
 
 Oncelikli ozellikler:
 
+- STM32 icin standart `device_info`, `telemetry_snapshot`, `fault_event` ve `runtime_event` paketleri
+- `Raspberry Pi` / Raspberry Pi OS benzeri edge gateway MVP
+- yerel REST API ve websocket olay akisi
+- SQLite tabanli yerel log ve telemetry kaydi
+- cihaz ustu web dashboard prototipi
 - debi sensoru entegrasyonu
 - debimetre K-faktoru ve ana hat debisi kalibrasyonu
 - `target_volume_l` ve gercek/likide litre bazli bitis mantigi
@@ -114,7 +125,7 @@ Oncelikli ozellikler:
 
 Urun vaadi:
 
-- "Ayni kart, daha akilli ve dogrulayan bir urune evriliyor"
+- "Ayni kontrol cekirdegi, Linux edge arayuzu ile olcen ve dogrulayan bir urune evriliyor"
 
 ## Faz 3 - `Insight` Fark Yaratan Surum
 
@@ -132,7 +143,7 @@ Oncelikli ozellikler:
 - isik birikimi veya dinamik ihtiyac tetikleme
 - sensor gate / inhibit mantigi
 - basinç ve debi ile capraz dogrulama
-- gelismis commissioning ekrani
+- Linux edge arayuzunde gelismis commissioning ekrani
 - alarm gecmisi ve olay gunlugu
 - bakim zekasi: kalibrasyon hatirlatma, vana cevrim sayisi, servis uyarilari
 
@@ -160,9 +171,8 @@ Oncelikli ozellikler:
 - uzaktan izleme
 - alarm bildirimi
 - log export ve raporlama
-- masaustu aracin genisletilmesi
+- Linux edge arayuzunun uzak erisim ve servis modlariyla genisletilmesi
 - saha teknisyeni icin servis ekranlari
-- `Raspberry Pi` benzeri bir `edge gateway` katmani
 - yerel ag uzerinden mobil servis ve commissioning akisi
 - internet senkronizasyonu ve cihaz filolari icin bulut katmani
 - AI destekli alarm ozetleme, tani ve optimizasyon onerileri
@@ -187,6 +197,7 @@ Bagli mimari icin detay:
 | 4+1 kanal kapasite kalibrasyonu | Faz 1 | Zorunlu | Zorunlu |
 | Z-bypass / 110 mm saha kurulum hedefi | Faz 1 | Zorunlu | Var |
 | Booster pompa cikisi | Faz 1 | Opsiyonel | Var |
+| Linux edge gateway / Raspbian arayuz | Faz 2 | Premium opsiyon | Zorunlu |
 | Debi sensoru | Faz 2 | Opsiyonel | Zorunluya yakin |
 | Hacim bazli bitis | Faz 2 | Opsiyonel | Zorunluya yakin |
 | Learned flow ve akis alarmi | Faz 2 | Opsiyonel | Var |
@@ -202,16 +213,22 @@ Bu repo icin yakin vade uygulama sirasi su olmali:
 1. `Faz 0` kalemlerini tamamla ve saha guvenilirligini kanitla
 2. `Core` kullanim akisini sadelelestir: kurulum sihirbazi, profil mantigi, alarm dili
 3. `Core` hidrolik hedefini 4+1 Venturi/Z-bypass ve 50-600 l/sa kanal kalibrasyonu olarak sabitle
-4. Debi sensorunu ortak platform genislemesi olarak tasarla
-5. Program modelini parsel bazli recete ve hacim bitisini tasiyacak sekilde evrilt
-6. `Insight` ozelliklerini ayri deger paketi olarak ac
+4. STM32 icin gateway'e uygun telemetry, event ve config protokolunu sabitle
+5. `gateway/` altinda Linux edge device-agent ve yerel dashboard prototipini baslat
+6. Debi sensorunu ortak platform genislemesi olarak tasarla
+7. Program modelini parsel bazli recete ve hacim bitisini tasiyacak sekilde evrilt
+8. `Insight` ozelliklerini Linux edge arayuz uzerinden ayri deger paketi olarak ac
 
 ## 6. Net Karar
 
 Urun yol haritasinin omurgasi su olmalidir:
 
 - Pazara ilk cikis: `Core`
-- Teknoloji yonu: `Insight`
+- Teknoloji yonu: Linux edge arayuzlu `Insight`
 - Ortak platform: tek firmware cekirdegi, segmente gore acilan ozellik katmanlari
 
 Boylece urun hem erken satilabilir, hem de zamanla daha yuksek katma degerli bir sisteme donusebilir.
+
+Insight edge arayuz detayi:
+
+- [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)

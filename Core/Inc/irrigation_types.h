@@ -60,6 +60,17 @@ typedef enum {
   ERR_MAX
 } error_code_t;
 
+typedef enum {
+  DOSING_LOGIC_FUZZY = 0,
+  DOSING_LOGIC_LINEAR = 1
+} dosing_logic_mode_t;
+
+typedef enum {
+  IRRIGATION_TRIGGER_FIXED_WINDOW = 0,
+  IRRIGATION_TRIGGER_PERIODIC = 1,
+  IRRIGATION_TRIGGER_SUNRISE_PERIODIC = 2
+} irrigation_trigger_mode_t;
+
 typedef struct {
   float target;
   float min_limit;
@@ -75,6 +86,7 @@ typedef struct {
   uint8_t response_gain_percent;   /* 100=nominal, lower values soften dosing. */
   uint8_t max_correction_cycles;   /* 0=unlimited consecutive correction cycles. */
   uint8_t fertilizer_select;
+  dosing_logic_mode_t dosing_logic_mode;
 } ph_control_params_t;
 
 typedef struct {
@@ -92,6 +104,7 @@ typedef struct {
   uint8_t max_correction_cycles;   /* 0=unlimited consecutive correction cycles. */
   uint8_t fertilizer_select;
   uint8_t recipe_ratio[IRRIGATION_EC_CHANNEL_COUNT];
+  dosing_logic_mode_t dosing_logic_mode;
 } ec_control_params_t;
 
 typedef struct {
@@ -141,6 +154,12 @@ typedef struct {
   uint16_t post_flush_sec;
   uint16_t last_run_day;
   uint16_t last_run_minute;
+  irrigation_trigger_mode_t trigger_mode;
+  int16_t anchor_offset_min;
+  uint16_t period_min;
+  uint8_t max_events_per_day;
+  uint8_t learned_ph_pwm_percent;
+  uint8_t learned_ec_pwm_percent;
   uint16_t crc;
 } irrigation_program_t;
 

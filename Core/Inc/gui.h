@@ -27,9 +27,6 @@ extern "C" {
 typedef enum {
   SCREEN_MAIN = 0,        /* Ana Ekran */
   SCREEN_SETTINGS,        /* Ayarlar Menüsü */
-  SCREEN_PH_SETTINGS,     /* pH Ayarları */
-  SCREEN_EC_SETTINGS,     /* EC Ayarları */
-  SCREEN_PARCEL_SETTINGS, /* Parsel Ayarları */
   SCREEN_MANUAL,          /* Manuel Kontrol */
   SCREEN_CALIBRATION,     /* Kalibrasyon */
   SCREEN_LOGS,            /* Log Kayıtları */

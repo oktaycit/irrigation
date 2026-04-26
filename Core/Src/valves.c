@@ -176,7 +176,7 @@ void VALVES_Init(void) {
     g_parcels[i].parcel_id = i + 1;
     g_parcels[i].valve_id = i + 1;
     g_parcels[i].enabled = 1;
-    snprintf(g_parcels[i].name, 16, "Parsel %d", i + 1);
+    snprintf(g_parcels[i].name, 16, "Parcel %d", i + 1);
     g_parcels[i].irrigation_duration_sec = 300;
   }
 
@@ -1117,7 +1117,7 @@ void PARCELS_Init(void) {
       g_parcels[i].irrigation_duration_sec = 300U;
     }
     if (g_parcels[i].name[0] == '\0') {
-      (void)snprintf(g_parcels[i].name, sizeof(g_parcels[i].name), "Parsel %u",
+      (void)snprintf(g_parcels[i].name, sizeof(g_parcels[i].name), "Parcel %u",
                      i + 1U);
     }
   }

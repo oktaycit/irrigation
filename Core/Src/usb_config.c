@@ -402,6 +402,8 @@ static uint8_t USB_CONFIG_ApplyProgramTokens(char **tokens, uint8_t token_count)
     program.post_flush_sec = (uint16_t)post_flush_sec;
   }
 
+  program.last_run_day = 0U;
+  program.last_run_minute = 0xFFFFU;
   IRRIGATION_CTRL_SetProgram(program_id, &program);
 
   /* Respond first so the desktop tool does not appear to hang while EEPROM

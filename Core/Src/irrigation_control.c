@@ -26,9 +26,12 @@ static irrigation_schedule_t g_schedules[IRRIGATION_PROGRAM_COUNT] = {0};
 static irrigation_program_t g_programs[IRRIGATION_PROGRAM_COUNT] = {0};
 static irrigation_runtime_backup_t g_runtime_backup = {0};
 static eeprom_system_t g_system_record = {0};
+static uint16_t g_pending_program_mask = 0U;
 
 static void IRRIGATION_CTRL_ApplySystemRecord(void);
 static void IRRIGATION_CTRL_SetDefaults(void);
+static uint16_t IRRIGATION_CTRL_GetDosingDisabledFlag(uint8_t valve_id);
+static void IRRIGATION_CTRL_ApplyDosingValveModes(void);
 static auto_mode_t IRRIGATION_CTRL_GetStoredAutoMode(void);
 static void IRRIGATION_CTRL_StoreAutoMode(auto_mode_t mode);
 static void IRRIGATION_CTRL_PersistRuntimeBackup(void);
@@ -37,8 +40,12 @@ static void IRRIGATION_CTRL_ChangeState(control_state_t new_state);
 static void IRRIGATION_CTRL_FinishRun(void);
 static uint8_t IRRIGATION_CTRL_StartPreparedRun(void);
 static uint8_t IRRIGATION_CTRL_StartCurrentValveCycle(void);
+static void IRRIGATION_CTRL_QueueDuePrograms(
+    const irrigation_schedule_context_t *context);
+static uint8_t IRRIGATION_CTRL_DequeuePendingProgram(void);
+static uint8_t IRRIGATION_CTRL_StartScheduledProgram(
+    uint8_t program_id, const irrigation_schedule_context_t *context);
 static uint8_t IRRIGATION_CTRL_IsRestorableState(program_state_t state);
-static void IRRIGATION_CTRL_AbortRuntimeRestore(error_code_t error);
 static program_state_t IRRIGATION_CTRL_GetInitialValvePhase(void);
 static control_state_t IRRIGATION_CTRL_GetControlStateForProgramPhase(
     program_state_t phase);
@@ -49,14 +56,23 @@ static void IRRIGATION_CTRL_ServiceValveActive(void);
 static void IRRIGATION_CTRL_ServiceWaiting(void);
 static void IRRIGATION_CTRL_ServiceDosing(void);
 static void IRRIGATION_CTRL_UpdateRuntimeBackup(void);
+static void IRRIGATION_CTRL_SetDefaultProgram(irrigation_program_t *program,
+                                              uint8_t program_id);
 static void IRRIGATION_CTRL_NormalizeProgram(irrigation_program_t *program);
 static void IRRIGATION_CTRL_NormalizeProgramRecipe(irrigation_program_t *program);
+static uint8_t IRRIGATION_CTRL_IsValidHHMM(uint16_t hhmm);
+static uint16_t IRRIGATION_CTRL_AddHourHHMM(uint16_t hhmm);
+static void IRRIGATION_CTRL_ApplyLearnedProgramDosing(
+    const irrigation_program_t *program);
+static void IRRIGATION_CTRL_CaptureLearnedDosing(
+    const dosing_controller_status_t *status);
 
 void IRRIGATION_CTRL_Init(void) {
   memset(&ctrl, 0, sizeof(ctrl));
   memset(&g_runtime_backup, 0, sizeof(g_runtime_backup));
   memset(g_schedules, 0, sizeof(g_schedules));
   memset(g_programs, 0, sizeof(g_programs));
+  g_pending_program_mask = 0U;
 
   IRRIGATION_CTRL_SetDefaults();
   DOSING_CTRL_Init();
@@ -191,6 +207,56 @@ void IRRIGATION_CTRL_SetECDosingResponse(uint32_t feedback_delay_ms,
   IRRIGATION_PERSIST_QueueSystemRecord(&g_system_record);
 }
 
+void IRRIGATION_CTRL_SetDosingLogicMode(dosing_logic_mode_t mode) {
+  if (mode != DOSING_LOGIC_LINEAR) {
+    mode = DOSING_LOGIC_FUZZY;
+  }
+
+  ctrl.ph_params.dosing_logic_mode = mode;
+  ctrl.ec_params.dosing_logic_mode = mode;
+
+  if (mode == DOSING_LOGIC_LINEAR) {
+    g_system_record.system_flags |= EEPROM_SYSTEM_FLAG_DOSING_LINEAR;
+  } else {
+    g_system_record.system_flags &= (uint16_t)~EEPROM_SYSTEM_FLAG_DOSING_LINEAR;
+  }
+
+  IRRIGATION_PERSIST_QueueSystemRecord(&g_system_record);
+}
+
+dosing_logic_mode_t IRRIGATION_CTRL_GetDosingLogicMode(void) {
+  return ctrl.ph_params.dosing_logic_mode;
+}
+
+void IRRIGATION_CTRL_SetDosingValveEnabled(uint8_t valve_id, uint8_t enabled) {
+  uint16_t flag = IRRIGATION_CTRL_GetDosingDisabledFlag(valve_id);
+
+  if (flag == 0U) {
+    return;
+  }
+
+  if (enabled != 0U) {
+    g_system_record.system_flags &= (uint16_t)~flag;
+    VALVES_SetMode(valve_id, VALVE_MODE_AUTO);
+  } else {
+    g_system_record.system_flags |= flag;
+    VALVES_SetMode(valve_id, VALVE_MODE_DISABLED);
+  }
+
+  IRRIGATION_PERSIST_QueueSystemRecord(&g_system_record);
+  IRRIGATION_PERSIST_Service();
+}
+
+uint8_t IRRIGATION_CTRL_IsDosingValveEnabled(uint8_t valve_id) {
+  uint16_t flag = IRRIGATION_CTRL_GetDosingDisabledFlag(valve_id);
+
+  if (flag == 0U) {
+    return 0U;
+  }
+
+  return ((g_system_record.system_flags & flag) == 0U) ? 1U : 0U;
+}
+
 void IRRIGATION_CTRL_SetECRecipe(const uint8_t *ratio_percent, uint8_t count) {
   uint8_t ratio_sum = 0U;
 
@@ -249,6 +315,11 @@ void IRRIGATION_CTRL_SaveDosingResponseParams(void) {
   g_system_record.ec_response_gain_percent = ctrl.ec_params.response_gain_percent;
   g_system_record.ph_max_correction_cycles = ctrl.ph_params.max_correction_cycles;
   g_system_record.ec_max_correction_cycles = ctrl.ec_params.max_correction_cycles;
+  if (ctrl.ph_params.dosing_logic_mode == DOSING_LOGIC_LINEAR) {
+    g_system_record.system_flags |= EEPROM_SYSTEM_FLAG_DOSING_LINEAR;
+  } else {
+    g_system_record.system_flags &= (uint16_t)~EEPROM_SYSTEM_FLAG_DOSING_LINEAR;
+  }
   IRRIGATION_PERSIST_QueueSystemRecord(&g_system_record);
   IRRIGATION_PERSIST_Service();
 }
@@ -299,9 +370,7 @@ void IRRIGATION_CTRL_Start(void) {
   if (PARCEL_SCHED_GetQueueSize() == 0U) {
     for (uint8_t parcel_id = 1U; parcel_id <= IRRIGATION_PROGRAM_VALVE_COUNT;
          parcel_id++) {
-      if (PARCELS_IsEnabled(parcel_id) != 0U) {
-        IRRIGATION_CTRL_AddToQueue(parcel_id);
-      }
+      IRRIGATION_CTRL_AddToQueue(parcel_id);
     }
   }
 
@@ -328,10 +397,6 @@ void IRRIGATION_CTRL_StartProgram(uint8_t program_id) {
   }
 
   program = &g_programs[program_id - 1U];
-  if (program->enabled == 0U) {
-    return;
-  }
-
   if (PARCEL_SCHED_BuildSequenceFromMask(program->valve_mask) == 0U) {
     return;
   }
@@ -356,6 +421,7 @@ program_state_t IRRIGATION_CTRL_GetProgramState(void) {
 
 void IRRIGATION_CTRL_Stop(void) {
   IRRIGATION_RUN_Stop(&ctrl);
+  g_pending_program_mask = 0U;
   IRRIGATION_CTRL_ChangeState(CTRL_STATE_IDLE);
   IRRIGATION_CTRL_ClearRuntimeBackup();
 }
@@ -367,8 +433,6 @@ void IRRIGATION_CTRL_Resume(void) { IRRIGATION_RUN_Resume(&ctrl); }
 uint8_t IRRIGATION_CTRL_IsRunning(void) { return ctrl.is_running; }
 
 void IRRIGATION_CTRL_Update(void) {
-  irrigation_schedule_context_t schedule_context = {0};
-
   if (ctrl.is_running == 0U || ctrl.is_paused != 0U) {
     return;
   }
@@ -399,15 +463,6 @@ void IRRIGATION_CTRL_Update(void) {
     break;
   }
 
-  if (PARCEL_SCHED_GetActiveProgram() != 0U && ctrl.is_running != 0U) {
-    irrigation_program_t *program =
-        &g_programs[PARCEL_SCHED_GetActiveProgram() - 1U];
-    IRRIGATION_TRIGGER_ReadContext(&schedule_context);
-    if (IRRIGATION_TRIGGER_IsPastEndWindow(&schedule_context,
-                                           program->end_hhmm) != 0U) {
-      IRRIGATION_CTRL_SetError(ERR_TIMEOUT);
-    }
-  }
 }
 
 control_state_t IRRIGATION_CTRL_GetState(void) { return ctrl.state; }
@@ -667,12 +722,7 @@ void IRRIGATION_CTRL_GetSchedule(uint8_t slot, irrigation_schedule_t *sched) {
 
 void IRRIGATION_CTRL_CheckSchedules(void) {
   irrigation_schedule_context_t schedule_context = {0};
-  irrigation_program_t *program;
   uint8_t program_id = 0U;
-
-  if (ctrl.is_running != 0U) {
-    return;
-  }
 
   if (g_auto_mode != AUTO_MODE_SCHEDULED && g_auto_mode != AUTO_MODE_FULL_AUTO) {
     return;
@@ -683,24 +733,83 @@ void IRRIGATION_CTRL_CheckSchedules(void) {
     return;
   }
 
+  if (ctrl.is_running != 0U) {
+    IRRIGATION_CTRL_QueueDuePrograms(&schedule_context);
+    return;
+  }
+
+  program_id = IRRIGATION_CTRL_DequeuePendingProgram();
+  if (program_id != 0U &&
+      IRRIGATION_CTRL_StartScheduledProgram(program_id, &schedule_context) != 0U) {
+    return;
+  }
+
   if (IRRIGATION_TRIGGER_SelectProgram(&schedule_context, g_programs,
                                        IRRIGATION_PROGRAM_COUNT, &program_id) ==
       0U) {
     return;
   }
 
-  program = &g_programs[program_id - 1U];
-  IRRIGATION_CTRL_StartProgram(program_id);
+  (void)IRRIGATION_CTRL_StartScheduledProgram(program_id, &schedule_context);
+}
 
-  /* Mark the slot as consumed only after the program really enters a run.
-   * Otherwise a transient pre-start failure blocks all retries for that day. */
-  if (ctrl.is_running == 0U || PARCEL_SCHED_GetActiveProgram() != program_id) {
+static void IRRIGATION_CTRL_QueueDuePrograms(
+    const irrigation_schedule_context_t *context) {
+  uint8_t active_program = PARCEL_SCHED_GetActiveProgram();
+
+  if (context == NULL) {
     return;
   }
 
-  program->last_run_day = schedule_context.day_stamp;
-  program->last_run_minute = schedule_context.minute_of_day;
+  for (uint8_t i = 0U; i < IRRIGATION_PROGRAM_COUNT; i++) {
+    uint8_t program_id = (uint8_t)(i + 1U);
+    uint16_t mask = (uint16_t)(1U << i);
+
+    if (program_id == active_program ||
+        (g_pending_program_mask & mask) != 0U ||
+        IRRIGATION_TRIGGER_IsProgramDue(context, &g_programs[i]) == 0U) {
+      continue;
+    }
+
+    g_pending_program_mask |= mask;
+  }
+}
+
+static uint8_t IRRIGATION_CTRL_DequeuePendingProgram(void) {
+  for (uint8_t i = 0U; i < IRRIGATION_PROGRAM_COUNT; i++) {
+    uint16_t mask = (uint16_t)(1U << i);
+
+    if ((g_pending_program_mask & mask) == 0U) {
+      continue;
+    }
+
+    g_pending_program_mask &= (uint16_t)~mask;
+    return (uint8_t)(i + 1U);
+  }
+
+  return 0U;
+}
+
+static uint8_t IRRIGATION_CTRL_StartScheduledProgram(
+    uint8_t program_id, const irrigation_schedule_context_t *context) {
+  irrigation_program_t *program;
+
+  if (program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT ||
+      context == NULL) {
+    return 0U;
+  }
+
+  program = &g_programs[program_id - 1U];
+  IRRIGATION_CTRL_StartProgram(program_id);
+
+  if (ctrl.is_running == 0U || PARCEL_SCHED_GetActiveProgram() != program_id) {
+    return 0U;
+  }
+
+  program->last_run_day = context->day_stamp;
+  program->last_run_minute = context->minute_of_day;
   IRRIGATION_PERSIST_QueueProgram(program_id, program);
+  return 1U;
 }
 
 void IRRIGATION_CTRL_GetProgram(uint8_t program_id, irrigation_program_t *program) {
@@ -715,6 +824,9 @@ void IRRIGATION_CTRL_SetProgram(uint8_t program_id,
                                 const irrigation_program_t *program) {
   irrigation_program_t record;
   irrigation_program_t *stored_program;
+  uint8_t ph_target_changed;
+  uint8_t ec_target_changed;
+  uint8_t recipe_changed;
 
   if (program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT || program == NULL) {
     return;
@@ -722,6 +834,20 @@ void IRRIGATION_CTRL_SetProgram(uint8_t program_id,
 
   stored_program = &g_programs[program_id - 1U];
   record = *program;
+  ph_target_changed = (record.ph_set_x100 != stored_program->ph_set_x100) ? 1U : 0U;
+  ec_target_changed = (record.ec_set_x100 != stored_program->ec_set_x100) ? 1U : 0U;
+  recipe_changed =
+      (memcmp(record.fert_ratio_percent, stored_program->fert_ratio_percent,
+              sizeof(record.fert_ratio_percent)) != 0)
+          ? 1U
+          : 0U;
+
+  if (ph_target_changed != 0U) {
+    record.learned_ph_pwm_percent = 0U;
+  }
+  if (ec_target_changed != 0U || recipe_changed != 0U) {
+    record.learned_ec_pwm_percent = 0U;
+  }
 
   if (record.enabled != stored_program->enabled ||
       record.start_hhmm != stored_program->start_hhmm ||
@@ -732,7 +858,11 @@ void IRRIGATION_CTRL_SetProgram(uint8_t program_id,
       record.repeat_count != stored_program->repeat_count ||
       record.days_mask != stored_program->days_mask ||
       record.pre_flush_sec != stored_program->pre_flush_sec ||
-      record.post_flush_sec != stored_program->post_flush_sec) {
+      record.post_flush_sec != stored_program->post_flush_sec ||
+      record.trigger_mode != stored_program->trigger_mode ||
+      record.anchor_offset_min != stored_program->anchor_offset_min ||
+      record.period_min != stored_program->period_min ||
+      record.max_events_per_day != stored_program->max_events_per_day) {
     record.last_run_day = 0U;
     record.last_run_minute = 0xFFFFU;
   }
@@ -747,10 +877,25 @@ void IRRIGATION_CTRL_SetProgram(uint8_t program_id,
 }
 
 void IRRIGATION_CTRL_LoadPrograms(void) {
-  (void)IRRIGATION_PERSIST_LoadPrograms(g_programs, IRRIGATION_PROGRAM_COUNT);
+  uint8_t load_ok =
+      IRRIGATION_PERSIST_LoadPrograms(g_programs, IRRIGATION_PROGRAM_COUNT);
+
   for (uint8_t i = 0U; i < IRRIGATION_PROGRAM_COUNT; i++) {
+    irrigation_program_t before;
+    if (load_ok != EEPROM_OK) {
+      IRRIGATION_CTRL_SetDefaultProgram(&g_programs[i], (uint8_t)(i + 1U));
+      IRRIGATION_PERSIST_QueueProgram((uint8_t)(i + 1U), &g_programs[i]);
+    }
+    before = g_programs[i];
     IRRIGATION_CTRL_NormalizeProgram(&g_programs[i]);
+    if (memcmp(&before, &g_programs[i], sizeof(before)) != 0) {
+      g_programs[i].crc =
+          EEPROM_CalculateCRC(&g_programs[i], sizeof(irrigation_program_t) - 2U);
+      IRRIGATION_PERSIST_QueueProgram((uint8_t)(i + 1U), &g_programs[i]);
+    }
   }
+
+  IRRIGATION_PERSIST_Service();
 }
 
 void IRRIGATION_CTRL_LoadRuntimeBackup(void) {
@@ -759,7 +904,7 @@ void IRRIGATION_CTRL_LoadRuntimeBackup(void) {
   program_state_t restored_state;
 
   if (IRRIGATION_RUNTIME_LoadBackup(&g_runtime_backup) != EEPROM_OK) {
-    memset(&g_runtime_backup, 0, sizeof(g_runtime_backup));
+    IRRIGATION_CTRL_ClearRuntimeBackup();
     return;
   }
 
@@ -787,19 +932,20 @@ void IRRIGATION_CTRL_LoadRuntimeBackup(void) {
     return;
   }
 
+  if (g_runtime_backup.error_code != (uint8_t)ERR_NONE) {
+    IRRIGATION_CTRL_ClearRuntimeBackup();
+    return;
+  }
+
   PARCEL_SCHED_SetManualSequence(0U);
   PARCEL_SCHED_SetActiveProgram(g_runtime_backup.active_program_id);
   PARCEL_SCHED_SetActiveValveIndex(g_runtime_backup.active_valve_index);
   PARCEL_SCHED_SetRepeatIndex(g_runtime_backup.repeat_index);
-  if (g_runtime_backup.error_code != (uint8_t)ERR_NONE) {
-    IRRIGATION_CTRL_AbortRuntimeRestore(
-        (error_code_t)g_runtime_backup.error_code);
-    return;
-  }
   FAULT_MGR_ClearAll();
   IRRIGATION_ALARM_Sync(&ctrl);
   ctrl.ph_params.target = (float)g_runtime_backup.ph_target_x100 / 100.0f;
   ctrl.ec_params.target = (float)g_runtime_backup.ec_target_x100 / 100.0f;
+  IRRIGATION_CTRL_ApplyLearnedProgramDosing(program);
 
   if (PARCEL_SCHED_GetActiveValveIndex() >= PARCEL_SCHED_GetActiveValveCount()) {
     IRRIGATION_CTRL_ClearRuntimeBackup();
@@ -933,7 +1079,6 @@ void IRRIGATION_CTRL_OnError(error_code_t error) { (void)error; }
 
 static void IRRIGATION_CTRL_ApplySystemRecord(void) {
   (void)IRRIGATION_PERSIST_LoadSystemRecord(&g_system_record);
-  g_system_record.system_flags = 0U;
 
   if (g_system_record.ph_target > 0.0f) {
     ctrl.ph_params.target = g_system_record.ph_target;
@@ -953,7 +1098,42 @@ static void IRRIGATION_CTRL_ApplySystemRecord(void) {
   ctrl.ec_params.feedback_delay_ms = g_system_record.ec_feedback_delay_ms;
   ctrl.ec_params.response_gain_percent = g_system_record.ec_response_gain_percent;
   ctrl.ec_params.max_correction_cycles = g_system_record.ec_max_correction_cycles;
+  IRRIGATION_CTRL_SetDosingLogicMode(
+      ((g_system_record.system_flags & EEPROM_SYSTEM_FLAG_DOSING_LINEAR) != 0U)
+          ? DOSING_LOGIC_LINEAR
+          : DOSING_LOGIC_FUZZY);
+  IRRIGATION_CTRL_ApplyDosingValveModes();
   g_auto_mode = IRRIGATION_CTRL_GetStoredAutoMode();
+}
+
+static uint16_t IRRIGATION_CTRL_GetDosingDisabledFlag(uint8_t valve_id) {
+  switch (valve_id) {
+  case DOSING_VALVE_ACID_ID:
+    return EEPROM_SYSTEM_FLAG_DOSING_ACID_DISABLED;
+  case DOSING_VALVE_FERT_A_ID:
+    return EEPROM_SYSTEM_FLAG_DOSING_FERT_A_DISABLED;
+  case DOSING_VALVE_FERT_B_ID:
+    return EEPROM_SYSTEM_FLAG_DOSING_FERT_B_DISABLED;
+  case DOSING_VALVE_FERT_C_ID:
+    return EEPROM_SYSTEM_FLAG_DOSING_FERT_C_DISABLED;
+  case DOSING_VALVE_FERT_D_ID:
+    return EEPROM_SYSTEM_FLAG_DOSING_FERT_D_DISABLED;
+  default:
+    return 0U;
+  }
+}
+
+static void IRRIGATION_CTRL_ApplyDosingValveModes(void) {
+  static const uint8_t valve_ids[DOSING_VALVE_COUNT] = {
+      DOSING_VALVE_ACID_ID, DOSING_VALVE_FERT_A_ID, DOSING_VALVE_FERT_B_ID,
+      DOSING_VALVE_FERT_C_ID, DOSING_VALVE_FERT_D_ID};
+
+  for (uint8_t i = 0U; i < DOSING_VALVE_COUNT; i++) {
+    uint8_t valve_id = valve_ids[i];
+    VALVES_SetMode(valve_id, (IRRIGATION_CTRL_IsDosingValveEnabled(valve_id) != 0U)
+                                 ? VALVE_MODE_AUTO
+                                 : VALVE_MODE_DISABLED);
+  }
 }
 
 static void IRRIGATION_CTRL_SetDefaults(void) {
@@ -972,6 +1152,7 @@ static void IRRIGATION_CTRL_SetDefaults(void) {
   ctrl.ph_params.acid_valve_id = DOSING_VALVE_ACID_ID;
   ctrl.ph_params.base_valve_id = 0U;
   ctrl.ph_params.fertilizer_select = 0U;
+  ctrl.ph_params.dosing_logic_mode = DOSING_LOGIC_FUZZY;
 
   ctrl.ec_params.target = 1.80f;
   ctrl.ec_params.min_limit = 1.00f;
@@ -986,6 +1167,7 @@ static void IRRIGATION_CTRL_SetDefaults(void) {
   ctrl.ec_params.max_correction_cycles = 3U;
   ctrl.ec_params.fertilizer_valve_id = DOSING_VALVE_FERT_A_ID;
   ctrl.ec_params.fertilizer_select = 0U;
+  ctrl.ec_params.dosing_logic_mode = DOSING_LOGIC_FUZZY;
   ctrl.ec_params.recipe_ratio[0] = 25U;
   ctrl.ec_params.recipe_ratio[1] = 25U;
   ctrl.ec_params.recipe_ratio[2] = 25U;
@@ -1046,7 +1228,10 @@ static void IRRIGATION_CTRL_ChangeState(control_state_t new_state) {
 }
 
 static void IRRIGATION_CTRL_FinishRun(void) {
+  uint16_t pending_programs = g_pending_program_mask;
+
   IRRIGATION_CTRL_Stop();
+  g_pending_program_mask = pending_programs;
   FAULT_MGR_SetAlarmText("PROGRAM DONE");
 }
 
@@ -1085,16 +1270,6 @@ static uint8_t IRRIGATION_CTRL_IsRestorableState(program_state_t state) {
   default:
     return 0U;
   }
-}
-
-static void IRRIGATION_CTRL_AbortRuntimeRestore(error_code_t error) {
-  if (error == ERR_NONE) {
-    error = ERR_TIMEOUT;
-  }
-
-  IRRIGATION_ALARM_RaiseError(&ctrl, error, IRRIGATION_CTRL_ChangeState,
-                              IRRIGATION_CTRL_OnError);
-  IRRIGATION_CTRL_ClearRuntimeBackup();
 }
 
 static program_state_t IRRIGATION_CTRL_GetInitialValvePhase(void) {
@@ -1198,8 +1373,65 @@ static void IRRIGATION_CTRL_ServiceDosing(void) {
     return;
   }
 
+  IRRIGATION_CTRL_CaptureLearnedDosing(&dosing_status);
+
   if (dosing_status.recommended_state != ctrl.state) {
     IRRIGATION_CTRL_ChangeState(dosing_status.recommended_state);
+  }
+}
+
+static void IRRIGATION_CTRL_ApplyLearnedProgramDosing(
+    const irrigation_program_t *program) {
+  if (program == NULL) {
+    return;
+  }
+
+  if (program->learned_ph_pwm_percent > 0U &&
+      program->learned_ph_pwm_percent <= 100U) {
+    ctrl.ph_params.pwm_duty_percent = program->learned_ph_pwm_percent;
+  }
+
+  if (program->learned_ec_pwm_percent > 0U &&
+      program->learned_ec_pwm_percent <= 100U) {
+    ctrl.ec_params.pwm_duty_percent = program->learned_ec_pwm_percent;
+  }
+}
+
+static void IRRIGATION_CTRL_CaptureLearnedDosing(
+    const dosing_controller_status_t *status) {
+  irrigation_program_t *program;
+  uint8_t program_id;
+  uint8_t duty_percent;
+
+  if (status == NULL || status->phase != DOSING_PHASE_IDLE) {
+    return;
+  }
+
+  duty_percent = status->last_completed_duty_percent;
+  if (duty_percent == 0U || duty_percent > 100U) {
+    return;
+  }
+
+  program_id = PARCEL_SCHED_GetActiveProgram();
+  if (program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT) {
+    return;
+  }
+
+  program = &g_programs[program_id - 1U];
+  if (status->last_completed_phase == DOSING_PHASE_PH &&
+      IRRIGATION_CTRL_IsPHInRange() != 0U &&
+      program->learned_ph_pwm_percent != duty_percent) {
+    program->learned_ph_pwm_percent = duty_percent;
+    program->crc =
+        EEPROM_CalculateCRC(program, sizeof(irrigation_program_t) - 2U);
+    IRRIGATION_PERSIST_QueueProgram(program_id, program);
+  } else if (status->last_completed_phase == DOSING_PHASE_EC &&
+             IRRIGATION_CTRL_IsECInRange() != 0U &&
+             program->learned_ec_pwm_percent != duty_percent) {
+    program->learned_ec_pwm_percent = duty_percent;
+    program->crc =
+        EEPROM_CalculateCRC(program, sizeof(irrigation_program_t) - 2U);
+    IRRIGATION_PERSIST_QueueProgram(program_id, program);
   }
 }
 
@@ -1221,13 +1453,75 @@ static void IRRIGATION_CTRL_UpdateRuntimeBackup(void) {
       EEPROM_CalculateCRC(&g_runtime_backup, sizeof(g_runtime_backup) - 2U);
 }
 
+static void IRRIGATION_CTRL_SetDefaultProgram(irrigation_program_t *program,
+                                              uint8_t program_id) {
+  if (program == NULL || program_id == 0U ||
+      program_id > IRRIGATION_PROGRAM_COUNT) {
+    return;
+  }
+
+  memset(program, 0, sizeof(*program));
+  program->enabled = 0U;
+  program->start_hhmm = (uint16_t)(600U + ((program_id - 1U) * 10U));
+  program->end_hhmm = (uint16_t)(program->start_hhmm + 100U);
+  if (program_id <= IRRIGATION_PROGRAM_VALVE_COUNT) {
+    program->valve_mask = (uint8_t)(1U << (program_id - 1U));
+  } else {
+    program->valve_mask = 1U;
+  }
+  program->irrigation_min = 5U;
+  program->wait_min = 1U;
+  program->repeat_count = 1U;
+  program->days_mask = 0x7FU;
+  program->ec_set_x100 = 180;
+  program->ph_set_x100 = 650;
+  for (uint8_t i = 0U; i < IRRIGATION_EC_CHANNEL_COUNT; i++) {
+    program->fert_ratio_percent[i] = 25U;
+  }
+  program->pre_flush_sec = IRRIGATION_DEFAULT_PRE_FLUSH_SEC;
+  program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
+  program->last_run_day = 0U;
+  program->last_run_minute = 0xFFFFU;
+  program->trigger_mode = IRRIGATION_TRIGGER_FIXED_WINDOW;
+  program->period_min = 120U;
+  program->max_events_per_day = 1U;
+}
+
 static void IRRIGATION_CTRL_NormalizeProgram(irrigation_program_t *program) {
+  uint16_t valid_valve_mask =
+      (uint16_t)((1UL << IRRIGATION_PROGRAM_VALVE_COUNT) - 1UL);
+
   if (program == NULL) {
     return;
   }
 
+  if (program->enabled > 1U) {
+    program->enabled = 0U;
+  }
+
+  program->valve_mask = (uint8_t)((uint16_t)program->valve_mask & valid_valve_mask);
+  if (program->enabled != 0U && program->valve_mask == 0U) {
+    program->enabled = 0U;
+  }
+
+  if (IRRIGATION_CTRL_IsValidHHMM(program->start_hhmm) == 0U) {
+    program->start_hhmm = 600U;
+  }
+
+  if (IRRIGATION_CTRL_IsValidHHMM(program->end_hhmm) == 0U ||
+      program->end_hhmm == program->start_hhmm) {
+    program->end_hhmm = IRRIGATION_CTRL_AddHourHHMM(program->start_hhmm);
+  }
+
+  program->days_mask &= 0x7FU;
+  if (program->enabled != 0U && program->days_mask == 0U) {
+    program->enabled = 0U;
+  }
+
   if (program->repeat_count == 0U) {
     program->repeat_count = 1U;
+  } else if (program->repeat_count > 24U) {
+    program->repeat_count = 24U;
   }
 
   if (program->irrigation_min == 0U) {
@@ -1246,6 +1540,12 @@ static void IRRIGATION_CTRL_NormalizeProgram(irrigation_program_t *program) {
 
   if (program->irrigation_min == 0U) {
     program->irrigation_min = 1U;
+  } else if (program->irrigation_min > 999U) {
+    program->irrigation_min = 999U;
+  }
+
+  if (program->wait_min > 1440U) {
+    program->wait_min = 1440U;
   }
 
   if (program->pre_flush_sec > IRRIGATION_MAX_FLUSH_SEC) {
@@ -1256,7 +1556,52 @@ static void IRRIGATION_CTRL_NormalizeProgram(irrigation_program_t *program) {
     program->post_flush_sec = IRRIGATION_MAX_FLUSH_SEC;
   }
 
+  if (program->trigger_mode > IRRIGATION_TRIGGER_SUNRISE_PERIODIC) {
+    program->trigger_mode = IRRIGATION_TRIGGER_FIXED_WINDOW;
+  }
+
+  if (program->period_min == 0U) {
+    program->period_min = 120U;
+  } else if (program->period_min > 1440U) {
+    program->period_min = 1440U;
+  }
+
+  if (program->max_events_per_day == 0U) {
+    program->max_events_per_day = 1U;
+  } else if (program->max_events_per_day > 24U) {
+    program->max_events_per_day = 24U;
+  }
+
+  if (program->learned_ph_pwm_percent > 100U) {
+    program->learned_ph_pwm_percent = 0U;
+  }
+
+  if (program->learned_ec_pwm_percent > 100U) {
+    program->learned_ec_pwm_percent = 0U;
+  }
+
+  if (program->anchor_offset_min < -720) {
+    program->anchor_offset_min = -720;
+  } else if (program->anchor_offset_min > 720) {
+    program->anchor_offset_min = 720;
+  }
+
   IRRIGATION_CTRL_NormalizeProgramRecipe(program);
+}
+
+static uint8_t IRRIGATION_CTRL_IsValidHHMM(uint16_t hhmm) {
+  uint16_t hour = (uint16_t)(hhmm / 100U);
+  uint16_t minute = (uint16_t)(hhmm % 100U);
+
+  return (hour < 24U && minute < 60U) ? 1U : 0U;
+}
+
+static uint16_t IRRIGATION_CTRL_AddHourHHMM(uint16_t hhmm) {
+  uint16_t hour = (uint16_t)(hhmm / 100U);
+  uint16_t minute = (uint16_t)(hhmm % 100U);
+
+  hour = (uint16_t)((hour + 1U) % 24U);
+  return (uint16_t)((hour * 100U) + minute);
 }
 
 static void IRRIGATION_CTRL_NormalizeProgramRecipe(irrigation_program_t *program) {

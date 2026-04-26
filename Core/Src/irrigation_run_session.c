@@ -31,6 +31,14 @@ void IRRIGATION_RUN_ApplyProgramTargets(irrigation_control_t *ctrl,
 
   ctrl->ph_params.target = (float)program->ph_set_x100 / 100.0f;
   ctrl->ec_params.target = (float)program->ec_set_x100 / 100.0f;
+  if (program->learned_ph_pwm_percent > 0U &&
+      program->learned_ph_pwm_percent <= 100U) {
+    ctrl->ph_params.pwm_duty_percent = program->learned_ph_pwm_percent;
+  }
+  if (program->learned_ec_pwm_percent > 0U &&
+      program->learned_ec_pwm_percent <= 100U) {
+    ctrl->ec_params.pwm_duty_percent = program->learned_ec_pwm_percent;
+  }
   memcpy(ctrl->ec_params.recipe_ratio, program->fert_ratio_percent,
          sizeof(ctrl->ec_params.recipe_ratio));
 }

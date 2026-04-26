@@ -69,6 +69,11 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 - [ ] Disabled parseller atlanıyor
 - [ ] Ayni parsel queue'ya tekrar tekrar eklenmiyor
 - [ ] Son parsel tamamlaninca sistem `IDLE` durumuna donuyor
+- [ ] `FIXED_WINDOW` trigger modu eski pencere/gunde bir kez davranisini koruyor
+- [ ] `PERIODIC` trigger modu `start_hhmm + anchor_offset_min` sonrasinda `period_min` aralikla tetikliyor
+- [ ] `SUNRISE_PERIODIC` trigger modu ilk fazda `06:00 + anchor_offset_min` ankrajini kullaniyor
+- [ ] `max_events_per_day` dolunca ayni gun yeni tetikleme baslamiyor
+- [ ] Program basariyla baslamadan `last_run_day/minute` tuketilmiyor
 
 ## 8. pH / EC Dozaj ve Non-Blocking Davranis
 
@@ -79,9 +84,14 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 - [ ] Dozaj tamamlaninca vana kapaniyor
 - [ ] Karistirma suresi tamamlaninca settling asamasina geciliyor
 - [ ] `Settings > Params` ekraninda PH/EC sayfalari arasinda gecis yapiliyor
+- [ ] `Settings > Params` ekraninda dozlama mantigi `FUZZY` / `LINEAR` olarak seciliyor
 - [ ] `Settings > Params` uzerinden feedback, gain ve max cycle degerleri kaydediliyor
 - [ ] `feedback_delay_ms` arttirildiginda yeniden dozlama karari gecikiyor
 - [ ] `response_gain_percent` dusuruldugunde dozaj duty degeri daha yumusak artiyor
+- [ ] pH hatasi buyudukce fuzzy duty kademeli artiyor
+- [ ] pH hedefe yaklasirken fuzzy duty azalip overshoot yapmiyor
+- [ ] EC hedefe yaklasirken fuzzy duty pH'a gore daha muhafazakar kaliyor
+- [ ] Settling sonrasi hata azaliyorsa sonraki dozlama duty degeri yumusuyor
 - [ ] `max_correction_cycles` asildiginda sistem fault davranisina geciyor
 - [ ] Settling sonrasi sensorler yeniden kontrol ediliyor
 - [ ] pH dusuk oldugunda baz duzeltme davranisi test edildi veya eksik olarak not edildi
