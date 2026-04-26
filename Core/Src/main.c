@@ -36,6 +36,11 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+#if defined(__GNUC__)
+#define BOARD_DIAG_UNUSED __attribute__((unused))
+#else
+#define BOARD_DIAG_UNUSED
+#endif
 
 /* USER CODE END PM */
 
@@ -53,6 +58,7 @@ SPI_HandleTypeDef hspi2;
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_rx;
@@ -87,17 +93,18 @@ static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM4_Init(void);
 static void MX_CRC_Init(void);
 static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
-static void BOARD_LED_DiagnosticInit(void);
-static void BOARD_LED_DiagnosticLoop(void);
-static void BOARD_LCD_TestLoop(void);
-static void BOARD_LCD_ProbeLoop(void);
-static void BOARD_LCD_SweepLoop(void);
-static void BOARD_LCD_ForceBacklightDefaultState(void);
-static void BOARD_IrrigationDemoInit(void);
-static void BOARD_IrrigationDemoProcess(void);
+static void BOARD_LED_DiagnosticInit(void) BOARD_DIAG_UNUSED;
+static void BOARD_LED_DiagnosticLoop(void) BOARD_DIAG_UNUSED;
+static void BOARD_LCD_TestLoop(void) BOARD_DIAG_UNUSED;
+static void BOARD_LCD_ProbeLoop(void) BOARD_DIAG_UNUSED;
+static void BOARD_LCD_SweepLoop(void) BOARD_DIAG_UNUSED;
+static void BOARD_LCD_ForceBacklightDefaultState(void) BOARD_DIAG_UNUSED;
+static void BOARD_IrrigationDemoInit(void) BOARD_DIAG_UNUSED;
+static void BOARD_IrrigationDemoProcess(void) BOARD_DIAG_UNUSED;
 
 /* USER CODE END PFP */
 
@@ -677,6 +684,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_TIM4_Init();
   MX_CRC_Init();
   MX_RTC_Init();
 #elif BOARD_LCD_TEST_MODE || BOARD_LCD_PROBE_MODE || BOARD_LCD_SWEEP_MODE
@@ -724,6 +732,14 @@ int main(void)
   {
     Error_Handler();
   }
+  if (HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
   System_Init();
   MX_USB_DEVICE_Init();
 #if BOARD_IRRIGATION_DEMO_MODE
@@ -756,6 +772,7 @@ int main(void)
       System_ProgramManagementTask();
       System_IrrigationTask();
       System_MaintenanceTask();
+      LOW_POWER_CheckAutoSleep();
 
       validation_counter++;
       if (validation_counter >= SYSTEM_VALIDATION_INTERVAL) {
@@ -794,10 +811,43 @@ void SystemClock_Config(void)
   * in the RCC_OscInitTypeDef structure.
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEState =
+      (HSE_BYPASS != 0U) ? RCC_HSE_BYPASS : RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) == HAL_OK)
+  {
+    /** Initializes the CPU, AHB and APB buses clocks
+    */
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                                |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) == HAL_OK)
+    {
+      return;
+    }
+  }
+
+  /* Fall back to the internal oscillator so the board can still boot. */
+  (void)HAL_RCC_DeInit();
+
+  RCC_OscInitStruct = (RCC_OscInitTypeDef){0};
+  RCC_ClkInitStruct = (RCC_ClkInitTypeDef){0};
+
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 16;
   RCC_OscInitStruct.PLL.PLLN = 336;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
@@ -1224,7 +1274,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM3)
   {
     g_system_tick++;
-    /* System tick for non-blocking timing */
+    VALVES_TimerTick1ms();
   }
 }
 
@@ -1307,6 +1357,55 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+ * @brief TIM4 Initialization (Dosing Hardware PWM - PB6/PB7)
+ */
+static void MX_TIM4_Init(void)
+{
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 8399;  /* 84MHz / 8400 = 10kHz */
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 399;      /* 10kHz / 400 = 25Hz */
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_TIM_MspPostInit(&htim4);
+}
+
+/**
  * @brief CRC Initialization (Hardware CRC for data validation)
  * @note Stubbed - HAL CRC driver not available
  */
@@ -1334,13 +1433,26 @@ static void MX_RTC_Init(void)
   */
 void Error_Handler(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
   /* USER CODE BEGIN Error_Handler_Debug */
   /* Blink RED LED (PC14) to indicate error */
   __disable_irq();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
   while (1)
   {
     HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_14);  /* RED LED blink */
-    HAL_Delay(200);  /* Fast blink = error */
+    for (volatile uint32_t delay = 0U; delay < 400000U; delay++)
+    {
+      __NOP();
+    }
   }
   /* USER CODE END Error_Handler_Debug */
 }

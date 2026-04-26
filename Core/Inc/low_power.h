@@ -57,6 +57,8 @@ void LOW_POWER_ConfigWakeupPin(void);
 uint32_t LOW_POWER_GetSleepDuration(void);
 void LOW_POWER_SetAutoSleepTimeout(uint32_t timeout_ms);
 void LOW_POWER_CheckAutoSleep(void);
+void LOW_POWER_UpdateActivity(void);
+void LOW_POWER_OnWakeup(uint32_t wakeup_source);
 
 #ifdef __cplusplus
 }

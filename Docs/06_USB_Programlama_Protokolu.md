@@ -1,8 +1,8 @@
 # USB Programlama Protokolu
 
 Bu katman, sulama programlarini TFT ekrandan tek tek girmek yerine PC tarafindan
-USB uzerinden yuklemek icin hazirlandi. Mevcut repoda USB CDC tasiyicisi henuz
-ekli degildir; ancak program import/export ve dogrulama mantigi hazirdir.
+USB uzerinden yuklemek icin kullanilir. Mevcut firmware icinde USB CDC tasiyicisi
+aktiftir ve komutlar `Core/Src/usb_config.c` uzerinden islenir.
 
 ## Hedef Mimari
 
@@ -27,7 +27,22 @@ Yaniti:
 OK,PONG
 ```
 
-### 2. Tum programlari oku
+### 2. Yardim komutu
+
+```text
+HELP
+```
+
+Ornek yanit:
+
+```text
+OK,HELP,PING
+OK,HELP,LIST
+OK,HELP,GET,<id>
+OK,HELP,SET,<id>,<enabled>,<start>,<end>,<mask>,<irr>,<wait>,<repeat>,<days>,<ph_x100>,<ec_x100>
+```
+
+### 3. Tum programlari oku
 
 ```text
 LIST
@@ -37,18 +52,18 @@ Ornek yanit:
 
 ```text
 OK,LIST,BEGIN
-PROGRAM,1,1,0600,0700,1,5,1,1,127,650,180
-PROGRAM,2,0,0610,0710,2,5,1,1,127,650,180
+PROGRAM,1,1,0600,0700,1,5,1,1,127,650,180,25,25,25,25,60,120
+PROGRAM,2,0,0610,0710,2,5,1,1,127,650,180,25,50,20,30,60,120
 OK,LIST,END
 ```
 
 Alanlar:
 
 ```text
-PROGRAM,<id>,<enabled>,<start_hhmm>,<end_hhmm>,<valve_mask>,<irrigation_min>,<wait_min>,<repeat_count>,<days_mask>,<ph_x100>,<ec_x100>
+PROGRAM,<id>,<enabled>,<start_hhmm>,<end_hhmm>,<valve_mask>,<irrigation_min>,<wait_min>,<repeat_count>,<days_mask>,<ph_x100>,<ec_x100>,<fert_a_pct>,<fert_b_pct>,<fert_c_pct>,<fert_d_pct>,<pre_flush_sec>,<post_flush_sec>
 ```
 
-### 3. Tek program oku
+### 4. Tek program oku
 
 ```text
 GET,1
@@ -57,19 +72,21 @@ GET,1
 Yaniti:
 
 ```text
-OK,PROGRAM,1,1,0600,0700,1,5,1,1,127,650,180
+OK,PROGRAM,1,1,0600,0700,1,5,1,1,127,650,180,25,25,25,25,60,120
 ```
 
-### 4. Program yaz
+### 5. Program yaz
+
+Mevcut firmware temel `SET` formunu kullanir:
 
 ```text
-SET,1,1,0630,0730,3,12,2,1,62,640,175
+SET,1,1,0630,0730,3,12,2,1,62,640,175,25,50,20,30,60,120
 ```
 
-Yaniti:
+Yaniti mevcut kaydin temel formatidir:
 
 ```text
-OK,SET,1,1,0630,0730,3,12,2,1,62,640,175
+OK,SET,1,1,0630,0730,3,12,2,1,62,640,175,25,50,20,30,60,120
 ```
 
 ## Alan Kurallari
@@ -84,14 +101,24 @@ OK,SET,1,1,0630,0730,3,12,2,1,62,640,175
 - `days_mask`: `1..127`
 - `ph_x100`: `0..1400`
 - `ec_x100`: `0..2000`
+- `fert_a_pct..fert_d_pct`: `0..100`, toplam 100 olmak zorunda degildir
+- `pre_flush_sec`, `post_flush_sec`: `0..900`
 
-## USB CDC Entegrasyon Notu
+## Uyumluluk Notu
 
-USB CDC eklendiginde cihaz tarafinda yapilacak baglama cok dar olacaktir:
+- Cihaz yanitlari yeni firmware'de gubre oranlari ve flush sureleriyle doner.
+- Masaustu araci, eski cihazlardan gelebilecek vana sure alanlarini iceren cevaplari
+  yine de okuyabilecek sekilde geriye donuk uyumlulugu korur.
+- `LIST` komutu toplu okumada tercih edilmelidir; tek tek `GET` yalnizca
+  geriye donuk uyumluluk veya ariza ayiklama icin gerekir.
 
-1. USB RX callback icinde gelen baytlar `USB_CONFIG_FeedRx()` fonksiyonuna aktarilacak.
-2. `USB_CONFIG_TransportWrite()` CDC transmit fonksiyonuna baglanacak.
-3. Istenirse polling yerine tamamen callback tabanli kullanilacak.
+## Tasiyici Notu
+
+USB CDC bridge bu repoda baglidir:
+
+1. CDC RX paketleri halka tamponuna alinir.
+2. `USB_CONFIG_Process()` bu tamponu okuyup satir bazli komut parser'ina besler.
+3. `USB_CONFIG_TransportWrite()` yanitlari CDC uzerinden geri gonderir.
 
 Bu sayede TFT yalnizca durum gostermek icin kullanilabilir; programlama isi PC
-uygulamasi, terminal veya basit bir konfig araci tarafindan yapilir.
+uygulamasi, terminal veya basit bir konfigurasyon araci tarafindan yapilir.

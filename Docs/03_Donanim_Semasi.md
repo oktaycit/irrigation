@@ -219,3 +219,22 @@ Bu repo için en sağlıklı yapı şu olur:
 - yeni bir `08_Baglanti_Dogrulama_Notlari.md`
   gerçek kart üzerinde test edilen pin, güç ve USB bulguları
 
+---
+
+## 11. Sulama Karti Icin Sensor Baslik Onerisi
+
+Urun hedefi dinamik ihtiyac odakli oldugu icin, ozel sulama kartinda asagidaki saha basliklari ayrilmalidir:
+
+| Baslik | Sinyal | Onerilen MCU baglantisi | Amaç |
+|--------|--------|--------------------------|------|
+| `J_SENS_I2C` | `3V3`, `GND`, `SCL`, `SDA` | `PB8`, `PB9` | Isik sensörü, gelecekte dijital genisleme |
+| `J_FLOW` | `5V/12V`, `GND`, `PULSE` | `PB13` | Debi sayimi |
+| `J_LEVEL` | `24V field or dry contact`, `GND`, `OUT` | `PB14` | Dusuk su seviyesi / tank emniyeti |
+| `J_DRAIN` | `24V field or dry contact`, `GND`, `OUT` | `PB15` | Drenaj feedback / inhibit |
+| `J_PRESS` | `5V`, `GND`, `AN_OUT` | `PC5` | Hat basinci |
+
+Pratik tasarim ilkesi:
+
+- En az `2 dijital input` kartta kesin ayrilmali.
+- `1 analog genisleme kanali` basinç veya kapasitif nem sensoru icin rezerve edilmeli.
+- Sensor basliklari dogrudan MCU pinine cikmamali; saha katinda koruma ve seviye uyarlama bulunmali.

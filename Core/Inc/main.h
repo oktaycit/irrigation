@@ -30,6 +30,7 @@ extern "C" {
 /* Exported functions ------------------------------------------------------- */
 
 void Error_Handler(void);
+void SystemClock_Config(void);
 
 /* External variables */
 extern volatile uint16_t g_adc_dma_buffer[ADC_DMA_BUFFER_SIZE];
@@ -52,6 +53,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 #include "buzzer.h"
 #include "hw_crc.h"
 #include "rtc_driver.h"
+#include "low_power.h"
 
 #ifdef __cplusplus
 }

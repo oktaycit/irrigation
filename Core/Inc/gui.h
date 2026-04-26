@@ -19,7 +19,7 @@ extern "C" {
 #include <stdint.h>
 
 /* GUI Configuration --------------------------------------------------------*/
-#define GUI_MAX_SCREENS 16U
+#define GUI_MAX_SCREENS 20U
 #define GUI_MAX_CONTROLS 32U
 #define GUI_MAX_TEXT_LEN 64U
 
@@ -41,6 +41,8 @@ typedef enum {
   SCREEN_RTC_SETTINGS,    /* RTC Ayarlari */
   SCREEN_AUTO_MODE,       /* Otomatik Mod */
   SCREEN_ALARMS,          /* Alarm Ekrani */
+  SCREEN_DOSING,          /* Dozaj Vanaları Kontrol */
+  SCREEN_PARAMETERS,      /* Genel Parametreler */
   SCREEN_MAX
 } screen_id_t;
 
@@ -190,6 +192,9 @@ void GUI_Redraw(void);
 void GUI_RegisterScreen(gui_screen_t *screen);
 void GUI_SetTitle(const char *title);
 void GUI_SetBackgroundColor(lcd_color_t color);
+
+/* Dozaj Vana Kontrolü ------------------------------------------------------*/
+void GUI_UpdateDosingValve(uint8_t valve_id, uint8_t is_open);
 
 /* Kontrol Oluşturma --------------------------------------------------------*/
 gui_control_t *GUI_CreateLabel(uint8_t id, uint16_t x, uint16_t y,

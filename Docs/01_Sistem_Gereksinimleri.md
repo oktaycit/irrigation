@@ -2,11 +2,26 @@
 
 ## 1. Proje Özeti
 
-STM32F407VET6 mikrodenetleyici ve 3.2" TFT dokunmatik LCD kullanarak pH ve EC kontrollü, 8 parsel vanalı otomatik sulama kontrol sistemi.
+STM32F407VET6 mikrodenetleyici ve 3.2" TFT dokunmatik LCD kullanarak pH ve EC kontrollu, 8 parsel vanali, iki musteri segmentine yonelen dinamik ihtiyac odakli otomatik sulama kontrol sistemi.
 
 ---
 
 ## 2. Donanım Gereksinimleri
+
+### 2.0 Urun Segmentleri
+
+Bu proje iki farkli urun seviyesiyle dusunulmelidir:
+
+| Segment | Hedef Kullanici | Ana Hedef | Urun Yaklasimi |
+|---------|------------------|-----------|----------------|
+| `Core` | Kucuk ciftciler | En dusuk maliyetle guvenilir ve verimli sulama | Az sensor, sade arayuz, hizli kurulum |
+| `Insight` | Kurumsal tarim isletmeleri | Operasyonel optimizasyon, daha fazla veri ve adaptif karar | Fazla sensor, parcelye ozel profil, ileri analiz |
+
+Ortak ilke:
+
+- Tek bir kontrol cekirdegi korunur.
+- Donanim ve firmware, ozellik bayraklariyla iki seviyeye ayrilir.
+- `Core` surumu, sonradan `Insight` seviyesine yukselebilecek sekilde tasarlanir.
 
 ### 2.1 Ana Kontrol Kartı
 | Bileşen | Özellik |
@@ -36,6 +51,37 @@ STM32F407VET6 mikrodenetleyici ve 3.2" TFT dokunmatik LCD kullanarak pH ve EC ko
 | pH Sensörü | 0-14 pH | 0-3.3V Analog | ADC1 IN0 (PA0) |
 | EC Sensörü | 0-20 mS/cm | 0-3.3V Analog | ADC1 IN1 (PA1) |
 | Sıcaklık (opsiyonel) | -40~85°C | DS18B20 | 1-Wire (PB12) |
+
+### 2.3.1 Dinamik Ihtiyac Icin Onerilen Ek Sensorler
+
+| Sensor | Oncelik | Sinyal Tipi | Onerilen Baglanti | Amac |
+|--------|---------|-------------|-------------------|------|
+| Isik sensoru (`BH1750` / `VEML7700`) | Zorunluya yakin | I2C | I2C1 (`PB8`, `PB9`) | `light bucket` ve gun dogumu referansi |
+| Debi sensoru | Zorunluya yakin | Pulse / dijital | `PB13` | Sure yerine litre tabanli bitis |
+| Dusuk su seviyesi | Zorunlu | Dijital | `PB14` | Kuru calisma ve emniyet interlock |
+| Hat basinc sensoru | Onerilen | 0-3.3V analog | `PC5` | Akis var/yok, filtre tikali, pompa davranisi |
+| Drenaj sensoru | Opsiyonel | Dijital | `PB15` | Sulama geri bildirimi ve inhibit |
+| Toprak nem sensoru | Opsiyonel | Dijital veya analog | `PC5` veya harici ADC | Parsel bazli inhibit veya alarm |
+
+Notlar:
+
+- Isik sensoru ile EEPROM ayni I2C hatti uzerinden paylasilabilir.
+- Debi sensoru ilk fazda pulse sayimi ile, ileride timer capture ile iyilestirilebilir.
+- Toprak nemi her parsele takilmayacaksa "ana karar verici" degil, `gate/inhibit` kaynagi olarak kullanilmalidir.
+
+### 2.3.2 Segment Bazli Sensor Paketi
+
+| Sensor | `Core` | `Insight` | Not |
+|--------|--------|-----------|-----|
+| pH | Var | Var | Ortak cekirdek ozelligi |
+| EC | Var | Var | Ortak cekirdek ozelligi |
+| RTC | Var | Var | Temel zaman referansi |
+| Dusuk su seviyesi | Var | Var | Emniyet icin zorunlu |
+| Debi | Opsiyonel / yazilimsal fallback | Var | `Insight` icin guclu tavsiye |
+| Isik | Opsiyonel | Var | `light bucket` icin gerekli |
+| Hat basinc | Yok veya opsiyonel | Var | Operasyonel tani icin onemli |
+| Drenaj | Yok veya opsiyonel | Opsiyonel | Geri bildirim katmani |
+| Toprak nem | Opsiyonel | Opsiyonel | Gate/advisory rolunde |
 
 ### 2.4 Vana Kontrol
 | Özellik | Değer |
@@ -71,7 +117,7 @@ STM32F407VET6 mikrodenetleyici ve 3.2" TFT dokunmatik LCD kullanarak pH ve EC ko
 ├─────────────────────────────────────────────────┤
 │           Sulama Kontrol Algoritması            │
 ├──────────────┬─────────────────┬────────────────┤
-│  pH Kontrol  │   EC Kontrol    │  Zamanlama     │
+│  pH Kontrol  │   EC Kontrol    │ Dinamik Tetik  │
 ├──────────────┴─────────────────┴────────────────┤
 │              Sensör Sürücü Katmanı              │
 ├──────────────┬─────────────────┬────────────────┤
@@ -162,10 +208,26 @@ EĞER EC < EC_min İSE:
 ```
 PARSEL SIRA İLE:
     1. Parsel vanasını aç
-    2. Ayarlanan süre kadar çalıştır
-    3. Parsel vanasını kapat
-    4. Sonraki parsela geç
-    5. Tüm parseller bitince döngüyü tamamla
+    2. Pre-flush fazını çalıştır
+    3. Dosing fazında pH/EC hedeflerini uygula
+    4. Post-flush ile hattı temizle
+    5. Bitiş kriteri süre veya hedef hacim ise tamamla
+    6. Sonraki parsela geç
+    7. Tüm parseller bitince döngüyü tamamla
+```
+
+#### Senaryo 4: Dinamik Ihtiyac Tetikleme
+```
+EĞER trigger_mode = PERIODIC İSE:
+    - Güneş doğumu veya sabit saat referansına göre çalıştır
+    - Belirlenen aralık kadar tekrar et
+
+EĞER trigger_mode = VOLUME_TARGET İSE:
+    - Parsel için hedef litreye ulaşınca sulamayı bitir
+
+EĞER trigger_mode = LIGHT_BUCKET İSE:
+    - Işık şiddetini zamanla çarpıp biriktir
+    - Kova eşiği dolunca 1 sulama turu başlat
 ```
 
 ### 4.4 Güvenlik Özellikleri
@@ -176,6 +238,8 @@ PARSEL SIRA İLE:
 | Sensör Hata Algılama | Geçersiz değer algılama |
 | Watchdog Timer | Sistem donma koruması |
 | Brownout Detect | Düşük gerilim koruması |
+| Akis Dogrulama | Debi veya basinç sensörü ile sulama teyidi |
+| Drenaj/Taşma Inhibit | Drenaj sensörü ile yeni tur baslatma engeli |
 
 ---
 

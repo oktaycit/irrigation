@@ -69,6 +69,11 @@ __attribute__((weak)) int _read(int file, char *ptr, int len)
   (void)file;
   int DataIdx;
 
+  if (__io_getchar == NULL) {
+    errno = ENOSYS;
+    return -1;
+  }
+
   for (DataIdx = 0; DataIdx < len; DataIdx++)
   {
     *ptr++ = __io_getchar();
@@ -81,6 +86,10 @@ __attribute__((weak)) int _write(int file, char *ptr, int len)
 {
   (void)file;
   int DataIdx;
+
+  if (__io_putchar == NULL) {
+    return len;
+  }
 
   for (DataIdx = 0; DataIdx < len; DataIdx++)
   {

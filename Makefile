@@ -60,15 +60,28 @@ Core/Src/touch_xpt2046.c \
 Core/Src/fonts.c \
 Core/Src/sensors.c \
 Core/Src/valves.c \
+Core/Src/dosing_controller.c \
+Core/Src/parcel_scheduler.c \
+Core/Src/fault_manager.c \
+Core/Src/irrigation_alarm_coordinator.c \
+Core/Src/irrigation_runtime.c \
+Core/Src/irrigation_persistence.c \
+Core/Src/irrigation_schedule_trigger.c \
+Core/Src/irrigation_run_session.c \
+Core/Src/irrigation_safety_monitor.c \
 Core/Src/gui.c \
 Core/Src/eeprom.c \
 Core/Src/irrigation_control.c \
+Core/Src/pcf8574.c \
 Core/Src/usb_device.c \
 Core/Src/usb_config.c \
 Core/Src/usbd_conf.c \
 Core/Src/usbd_desc.c \
 Core/Src/usbd_cdc_interface.c \
 Core/Src/buzzer.c \
+Core/Src/low_power.c \
+Core/Src/syscalls.c \
+Core/Src/sysmem.c \
 Core/Src/hw_crc_stub.c \
 Core/Src/rtc_driver_stub.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
@@ -144,7 +157,7 @@ flash: $(BUILD_DIR)/$(TARGET).elf
 
 # Debug bağlantısını test et
 debug-test:
-	$(OPENOCD) -f $(OPENOCD_INTERFACE) -f $(OPENOCD_TARGET) -c "init; reset; halt; info target; exit"
+	$(OPENOCD) -f $(OPENOCD_INTERFACE) -f $(OPENOCD_TARGET) -c "init; reset halt; targets; exit"
 
 # GDB ile debug başlat
 debug-gdb: $(BUILD_DIR)/$(TARGET).elf

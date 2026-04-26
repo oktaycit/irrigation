@@ -6,6 +6,7 @@
  */
 
 #include "main.h"
+#include <stdio.h>
 #include <string.h>
 
 extern SPI_HandleTypeDef hspi1;
@@ -13,11 +14,107 @@ extern SPI_HandleTypeDef hspi1;
 static eeprom_handle_t h_eeprom = {0};
 static uint8_t g_eeprom_sector_cache[4096] = {0};
 
+typedef struct {
+  uint8_t enabled;
+  uint16_t start_hhmm;
+  uint16_t end_hhmm;
+  uint8_t valve_mask;
+  uint16_t irrigation_min;
+  uint16_t wait_min;
+  uint8_t repeat_count;
+  uint8_t days_mask;
+  int16_t ec_set_x100;
+  int16_t ph_set_x100;
+  uint8_t fert_ratio_percent[IRRIGATION_EC_CHANNEL_COUNT];
+  uint16_t last_run_day;
+  uint16_t last_run_minute;
+  uint16_t crc;
+} legacy_recipe_irrigation_program_t;
+
+typedef struct {
+  uint8_t enabled;
+  uint16_t start_hhmm;
+  uint16_t end_hhmm;
+  uint8_t valve_mask;
+  uint16_t irrigation_min;
+  uint16_t wait_min;
+  uint8_t repeat_count;
+  uint8_t days_mask;
+  int16_t ec_set_x100;
+  int16_t ph_set_x100;
+  uint16_t last_run_day;
+  uint16_t last_run_minute;
+  uint8_t valve_duration_min[IRRIGATION_PROGRAM_VALVE_COUNT];
+  uint16_t crc;
+} compat_irrigation_program_t;
+
+typedef struct {
+  uint8_t enabled;
+  uint16_t start_hhmm;
+  uint16_t end_hhmm;
+  uint8_t valve_mask;
+  uint16_t irrigation_min;
+  uint16_t wait_min;
+  uint8_t repeat_count;
+  uint8_t days_mask;
+  int16_t ec_set_x100;
+  int16_t ph_set_x100;
+  uint16_t last_run_day;
+  uint16_t last_run_minute;
+  uint8_t repeat_interval_min;
+  uint8_t valve_duration_min[IRRIGATION_PROGRAM_VALVE_COUNT];
+  uint16_t crc;
+} legacy_irrigation_program_t;
+
+typedef struct {
+  uint8_t enabled;
+  uint16_t start_hhmm;
+  uint16_t end_hhmm;
+  uint8_t valve_mask;
+  uint16_t irrigation_min;
+  uint16_t wait_min;
+  uint8_t repeat_count;
+  uint8_t days_mask;
+  int16_t ec_set_x100;
+  int16_t ph_set_x100;
+  uint16_t last_run_day;
+  uint16_t last_run_minute;
+  uint8_t reserved[4];
+  uint16_t crc;
+} legacy_basic_irrigation_program_t;
+
 static uint8_t EEPROM_IsStructCRCValid(void *data, uint16_t size,
                                        uint16_t expected_crc);
+static uint8_t EEPROM_IsHeaderValid(const eeprom_header_t *header);
+static uint8_t EEPROM_IsSystemParamsSane(const eeprom_system_t *system);
+static uint8_t EEPROM_IsParcelRecordSane(const eeprom_parcel_t *parcel);
 static void EEPROM_SetDefaultSystemParams(void);
 static void EEPROM_SetDefaultPrograms(void);
+static void EEPROM_SetDefaultParcel(uint8_t parcel_id, eeprom_parcel_t *parcel);
 static uint16_t EEPROM_GetProgramAddress(uint8_t program_id);
+static uint16_t EEPROM_GetLegacyRecipeProgramAddress(uint8_t program_id);
+static uint16_t EEPROM_GetCompatProgramAddress(uint8_t program_id);
+static uint16_t EEPROM_GetLegacyProgramAddress(uint8_t program_id);
+static uint16_t EEPROM_GetLegacyBasicProgramAddress(uint8_t program_id);
+static void EEPROM_MigrateLegacyRecipeProgram(
+    const legacy_recipe_irrigation_program_t *legacy,
+    irrigation_program_t *program);
+static void EEPROM_MigrateCompatProgram(const compat_irrigation_program_t *legacy,
+                                        irrigation_program_t *program);
+static void EEPROM_MigrateLegacyProgram(
+    const legacy_irrigation_program_t *legacy,
+    irrigation_program_t *program);
+static void EEPROM_MigrateLegacyBasicProgram(
+    const legacy_basic_irrigation_program_t *legacy,
+    irrigation_program_t *program);
+static uint8_t EEPROM_LoadCompatPrograms(irrigation_program_t *programs,
+                                         uint8_t count);
+static uint8_t EEPROM_LoadLegacyRecipePrograms(irrigation_program_t *programs,
+                                               uint8_t count);
+static uint8_t EEPROM_LoadLegacyPrograms(irrigation_program_t *programs,
+                                         uint8_t count);
+static uint8_t EEPROM_LoadLegacyBasicPrograms(irrigation_program_t *programs,
+                                              uint8_t count);
 static void EEPROM_FlashSelect(void);
 static void EEPROM_FlashDeselect(void);
 static uint8_t EEPROM_FlashWaitReady(uint32_t timeout_ms);
@@ -42,6 +139,10 @@ static uint8_t EEPROM_FlashInit(void);
 #define EEPROM_FLASH_EXPECTED_MFG 0xEFU
 #define EEPROM_FLASH_EXPECTED_CAPACITY 0x15U
 
+_Static_assert((sizeof(irrigation_program_t) * IRRIGATION_PROGRAM_COUNT) <=
+                   (EEPROM_ADDR_RUNTIME_BACKUP - EEPROM_ADDR_PROGRAMS),
+               "Program storage overlaps runtime backup area");
+
 uint8_t EEPROM_Init(void) {
   if (EEPROM_FlashInit() != EEPROM_OK) {
     h_eeprom.last_error = EEPROM_NOT_INITIALIZED;
@@ -53,7 +154,7 @@ uint8_t EEPROM_Init(void) {
     return EEPROM_ERROR;
   }
 
-  if (h_eeprom.header.magic != EEPROM_MAGIC_VALUE) {
+  if (EEPROM_IsHeaderValid(&h_eeprom.header) == 0U) {
     EEPROM_Format();
   }
 
@@ -136,7 +237,8 @@ uint8_t EEPROM_LoadSystemParams(void) {
   }
 
   if (!EEPROM_IsStructCRCValid(&h_eeprom.system, sizeof(h_eeprom.system),
-                               h_eeprom.system.crc)) {
+                               h_eeprom.system.crc) ||
+      EEPROM_IsSystemParamsSane(&h_eeprom.system) == 0U) {
     EEPROM_SetDefaultSystemParams();
     (void)EEPROM_SaveSystemParams();
     h_eeprom.last_error = EEPROM_CRC_ERROR;
@@ -215,10 +317,95 @@ uint8_t EEPROM_SaveTouchCalibration(const touch_calibration_t *cal) {
                             sizeof(record));
 }
 
+uint8_t EEPROM_LoadParcel(uint8_t parcel_id) {
+  eeprom_parcel_t record = {0};
+
+  if (parcel_id == 0U || parcel_id > PARCEL_VALVE_COUNT) {
+    h_eeprom.last_error = EEPROM_READ_ERROR;
+    return EEPROM_ERROR;
+  }
+
+  if (EEPROM_ReadBuffer((uint16_t)(EEPROM_ADDR_PARCELS +
+                                   ((uint16_t)(parcel_id - 1U) *
+                                    sizeof(eeprom_parcel_t))),
+                        (uint8_t *)&record, sizeof(record)) != EEPROM_OK) {
+    return EEPROM_ERROR;
+  }
+
+  if (!EEPROM_IsStructCRCValid(&record, sizeof(record), record.crc) ||
+      EEPROM_IsParcelRecordSane(&record) == 0U) {
+    EEPROM_SetDefaultParcel(parcel_id, &record);
+    h_eeprom.parcels[parcel_id - 1U] = record;
+    (void)EEPROM_SaveParcel(parcel_id);
+    h_eeprom.last_error = EEPROM_CRC_ERROR;
+    return EEPROM_ERROR;
+  }
+
+  h_eeprom.parcels[parcel_id - 1U] = record;
+  PARCELS_SetName(parcel_id, record.name);
+  PARCELS_SetDuration(parcel_id, record.duration_sec);
+  PARCELS_SetEnabled(parcel_id, record.enabled);
+  return EEPROM_OK;
+}
+
+uint8_t EEPROM_SaveParcel(uint8_t parcel_id) {
+  eeprom_parcel_t record = {0};
+
+  if (parcel_id == 0U || parcel_id > PARCEL_VALVE_COUNT) {
+    h_eeprom.last_error = EEPROM_WRITE_ERROR;
+    return EEPROM_ERROR;
+  }
+
+  (void)snprintf(record.name, sizeof(record.name), "%s",
+                 PARCELS_GetName(parcel_id));
+  record.duration_sec = PARCELS_GetDuration(parcel_id);
+  record.wait_sec = 0U;
+  record.enabled = PARCELS_IsEnabled(parcel_id);
+
+  if (EEPROM_IsParcelRecordSane(&record) == 0U) {
+    EEPROM_SetDefaultParcel(parcel_id, &record);
+  }
+
+  record.crc = EEPROM_CalculateCRC(&record, sizeof(record) - 2U);
+  h_eeprom.parcels[parcel_id - 1U] = record;
+  return EEPROM_WriteBuffer((uint16_t)(EEPROM_ADDR_PARCELS +
+                                       ((uint16_t)(parcel_id - 1U) *
+                                        sizeof(eeprom_parcel_t))),
+                            (uint8_t *)&record, sizeof(record));
+}
+
+uint8_t EEPROM_LoadAllParcels(void) {
+  uint8_t all_valid = 1U;
+
+  for (uint8_t i = 1U; i <= PARCEL_VALVE_COUNT; i++) {
+    if (EEPROM_LoadParcel(i) != EEPROM_OK) {
+      eeprom_parcel_t *record = &h_eeprom.parcels[i - 1U];
+      PARCELS_SetName(i, record->name);
+      PARCELS_SetDuration(i, record->duration_sec);
+      PARCELS_SetEnabled(i, record->enabled);
+      all_valid = 0U;
+    }
+  }
+
+  return (all_valid != 0U) ? EEPROM_OK : EEPROM_ERROR;
+}
+
+uint8_t EEPROM_SaveAllParcels(void) {
+  uint8_t all_saved = 1U;
+
+  for (uint8_t i = 1U; i <= PARCEL_VALVE_COUNT; i++) {
+    if (EEPROM_SaveParcel(i) != EEPROM_OK) {
+      all_saved = 0U;
+    }
+  }
+
+  return (all_saved != 0U) ? EEPROM_OK : EEPROM_ERROR;
+}
+
 uint8_t EEPROM_LoadProgram(uint8_t program_id, irrigation_program_t *program) {
   irrigation_program_t record = {0};
 
-  if (program_id == 0U || program_id > VALVE_COUNT || program == NULL) {
+  if (program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT || program == NULL) {
     h_eeprom.last_error = EEPROM_READ_ERROR;
     return EEPROM_ERROR;
   }
@@ -241,7 +428,7 @@ uint8_t EEPROM_SaveProgram(uint8_t program_id,
                            const irrigation_program_t *program) {
   irrigation_program_t record = {0};
 
-  if (program_id == 0U || program_id > VALVE_COUNT || program == NULL) {
+  if (program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT || program == NULL) {
     h_eeprom.last_error = EEPROM_WRITE_ERROR;
     return EEPROM_ERROR;
   }
@@ -253,7 +440,9 @@ uint8_t EEPROM_SaveProgram(uint8_t program_id,
 }
 
 uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
-  uint8_t max_count = (count > VALVE_COUNT) ? VALVE_COUNT : count;
+  uint8_t max_count =
+      (count > IRRIGATION_PROGRAM_COUNT) ? IRRIGATION_PROGRAM_COUNT : count;
+  uint8_t all_valid = 1U;
 
   if (programs == NULL) {
     return EEPROM_ERROR;
@@ -262,6 +451,38 @@ uint8_t EEPROM_LoadAllPrograms(irrigation_program_t *programs, uint8_t count) {
   for (uint8_t i = 0U; i < max_count; i++) {
     if (EEPROM_LoadProgram(i + 1U, &programs[i]) != EEPROM_OK) {
       memset(&programs[i], 0, sizeof(programs[i]));
+      all_valid = 0U;
+    }
+  }
+
+  if (all_valid != 0U) {
+    return EEPROM_OK;
+  }
+
+  if (EEPROM_LoadLegacyRecipePrograms(programs, max_count) == EEPROM_OK) {
+    for (uint8_t i = 0U; i < max_count; i++) {
+      (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
+    }
+    return EEPROM_OK;
+  }
+
+  if (EEPROM_LoadCompatPrograms(programs, max_count) == EEPROM_OK) {
+    for (uint8_t i = 0U; i < max_count; i++) {
+      (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
+    }
+    return EEPROM_OK;
+  }
+
+  if (EEPROM_LoadLegacyPrograms(programs, max_count) == EEPROM_OK) {
+    for (uint8_t i = 0U; i < max_count; i++) {
+      (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
+    }
+    return EEPROM_OK;
+  }
+
+  if (EEPROM_LoadLegacyBasicPrograms(programs, max_count) == EEPROM_OK) {
+    for (uint8_t i = 0U; i < max_count; i++) {
+      (void)EEPROM_SaveProgram(i + 1U, &programs[i]);
     }
   }
 
@@ -330,22 +551,11 @@ void EEPROM_Format(void) {
 }
 
 uint16_t EEPROM_CalculateCRC(void *data, uint16_t size) {
-  uint16_t crc = 0xFFFFU;
-  uint8_t *bytes = (uint8_t *)data;
-
   if (data == NULL || size == 0U) {
     return 0U;
   }
 
-  for (uint16_t i = 0U; i < size; i++) {
-    crc ^= bytes[i];
-    for (uint8_t bit = 0U; bit < 8U; bit++) {
-      crc = (crc & 1U) != 0U ? (uint16_t)((crc >> 1U) ^ 0xA001U)
-                             : (uint16_t)(crc >> 1U);
-    }
-  }
-
-  return crc;
+  return CRC16_Calculate((const uint8_t *)data, size);
 }
 
 uint8_t EEPROM_GetLastError(void) { return h_eeprom.last_error; }
@@ -370,14 +580,21 @@ static void EEPROM_SetDefaultSystemParams(void) {
   h_eeprom.system.ec_max = 2.50f;
   h_eeprom.system.irrigation_interval = 60U;
   h_eeprom.system.auto_mode_enabled = 1U;
+  h_eeprom.system.ph_feedback_delay_ms = IRRIGATION_SETTLING_TIME * 1000U;
+  h_eeprom.system.ec_feedback_delay_ms = IRRIGATION_SETTLING_TIME * 1000U;
+  h_eeprom.system.ph_response_gain_percent = 100U;
+  h_eeprom.system.ec_response_gain_percent = 100U;
+  h_eeprom.system.ph_max_correction_cycles = 3U;
+  h_eeprom.system.ec_max_correction_cycles = 3U;
   h_eeprom.system.reserved[0] = AUTO_MODE_SCHEDULED;
   h_eeprom.system.reserved[1] = EEPROM_SYSTEM_MODE_MARKER;
+  h_eeprom.system.reserved[2] = EEPROM_SYSTEM_SCHEMA_VERSION;
 }
 
 static void EEPROM_SetDefaultPrograms(void) {
   irrigation_program_t program = {0};
 
-  for (uint8_t i = 0U; i < VALVE_COUNT; i++) {
+  for (uint8_t i = 0U; i < IRRIGATION_PROGRAM_COUNT; i++) {
     memset(&program, 0, sizeof(program));
     program.enabled = 0U;
     program.start_hhmm = (uint16_t)(600U + (i * 10U));
@@ -389,15 +606,379 @@ static void EEPROM_SetDefaultPrograms(void) {
     program.days_mask = 0x7FU;
     program.ec_set_x100 = 180;
     program.ph_set_x100 = 650;
+    for (uint8_t ratio_idx = 0U; ratio_idx < IRRIGATION_EC_CHANNEL_COUNT;
+         ratio_idx++) {
+      program.fert_ratio_percent[ratio_idx] = 25U;
+    }
+    program.pre_flush_sec = IRRIGATION_DEFAULT_PRE_FLUSH_SEC;
+    program.post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
     program.last_run_day = 0U;
     program.last_run_minute = 0xFFFFU;
     (void)EEPROM_SaveProgram(i + 1U, &program);
   }
+
+  for (uint8_t i = 1U; i <= PARCEL_VALVE_COUNT; i++) {
+    eeprom_parcel_t record = {0};
+
+    EEPROM_SetDefaultParcel(i, &record);
+    h_eeprom.parcels[i - 1U] = record;
+    (void)EEPROM_WriteBuffer((uint16_t)(EEPROM_ADDR_PARCELS +
+                                        ((uint16_t)(i - 1U) *
+                                         sizeof(eeprom_parcel_t))),
+                             (uint8_t *)&record, sizeof(record));
+  }
+}
+
+static uint8_t EEPROM_IsHeaderValid(const eeprom_header_t *header) {
+  if (header == NULL) {
+    return 0U;
+  }
+
+  if (header->magic != EEPROM_MAGIC_VALUE || header->initialized == 0U) {
+    return 0U;
+  }
+
+  return (header->version_major == FIRMWARE_VERSION_MAJOR) ? 1U : 0U;
+}
+
+static uint8_t EEPROM_IsSystemParamsSane(const eeprom_system_t *system) {
+  if (system == NULL) {
+    return 0U;
+  }
+
+  if (system->reserved[2] != EEPROM_SYSTEM_SCHEMA_VERSION) {
+    return 0U;
+  }
+
+  if (system->brightness > 100U) {
+    return 0U;
+  }
+
+  if (system->ph_min < 0.0f || system->ph_min >= system->ph_max ||
+      system->ph_target < system->ph_min || system->ph_target > system->ph_max ||
+      system->ph_max > 14.0f) {
+    return 0U;
+  }
+
+  if (system->ec_min < 0.0f || system->ec_min >= system->ec_max ||
+      system->ec_target < system->ec_min || system->ec_target > system->ec_max ||
+      system->ec_max > 10.0f) {
+    return 0U;
+  }
+
+  if (system->irrigation_interval == 0U ||
+      system->irrigation_interval > (24UL * 60UL)) {
+    return 0U;
+  }
+
+  if (system->ph_feedback_delay_ms > 600000UL ||
+      system->ec_feedback_delay_ms > 600000UL) {
+    return 0U;
+  }
+
+  if (system->ph_response_gain_percent == 0U ||
+      system->ph_response_gain_percent > 100U ||
+      system->ec_response_gain_percent == 0U ||
+      system->ec_response_gain_percent > 100U) {
+    return 0U;
+  }
+
+  if (system->ph_max_correction_cycles > 10U ||
+      system->ec_max_correction_cycles > 10U) {
+    return 0U;
+  }
+
+  if (system->reserved[1] == EEPROM_SYSTEM_MODE_MARKER &&
+      system->reserved[0] > (uint8_t)AUTO_MODE_SCHEDULED) {
+    return 0U;
+  }
+
+  return 1U;
+}
+
+static uint8_t EEPROM_IsParcelRecordSane(const eeprom_parcel_t *parcel) {
+  if (parcel == NULL) {
+    return 0U;
+  }
+
+  if (parcel->name[sizeof(parcel->name) - 1U] != '\0') {
+    return 0U;
+  }
+
+  if (parcel->duration_sec < 30U || parcel->duration_sec > (24UL * 60UL * 60UL)) {
+    return 0U;
+  }
+
+  if (parcel->enabled > 1U) {
+    return 0U;
+  }
+
+  return 1U;
+}
+
+static void EEPROM_SetDefaultParcel(uint8_t parcel_id, eeprom_parcel_t *parcel) {
+  if (parcel == NULL || parcel_id == 0U || parcel_id > PARCEL_VALVE_COUNT) {
+    return;
+  }
+
+  memset(parcel, 0, sizeof(*parcel));
+  (void)snprintf(parcel->name, sizeof(parcel->name), "Parsel %u", parcel_id);
+  parcel->duration_sec = 300U;
+  parcel->wait_sec = 0U;
+  parcel->enabled = 1U;
+  parcel->crc = EEPROM_CalculateCRC(parcel, sizeof(*parcel) - 2U);
 }
 
 static uint16_t EEPROM_GetProgramAddress(uint8_t program_id) {
   return (uint16_t)(EEPROM_ADDR_PROGRAMS +
                     ((uint16_t)(program_id - 1U) * sizeof(irrigation_program_t)));
+}
+
+static uint16_t EEPROM_GetLegacyRecipeProgramAddress(uint8_t program_id) {
+  return (uint16_t)(EEPROM_ADDR_PROGRAMS +
+                    ((uint16_t)(program_id - 1U) *
+                     sizeof(legacy_recipe_irrigation_program_t)));
+}
+
+static uint16_t EEPROM_GetCompatProgramAddress(uint8_t program_id) {
+  return (uint16_t)(EEPROM_ADDR_PROGRAMS +
+                    ((uint16_t)(program_id - 1U) *
+                     sizeof(compat_irrigation_program_t)));
+}
+
+static uint16_t EEPROM_GetLegacyProgramAddress(uint8_t program_id) {
+  return (uint16_t)(EEPROM_ADDR_PROGRAMS + ((uint16_t)(program_id - 1U) *
+                                            sizeof(legacy_irrigation_program_t)));
+}
+
+static uint16_t EEPROM_GetLegacyBasicProgramAddress(uint8_t program_id) {
+  return (uint16_t)(
+      EEPROM_ADDR_PROGRAMS +
+      ((uint16_t)(program_id - 1U) * sizeof(legacy_basic_irrigation_program_t)));
+}
+
+static void EEPROM_MigrateLegacyRecipeProgram(
+    const legacy_recipe_irrigation_program_t *legacy,
+    irrigation_program_t *program) {
+  if (legacy == NULL || program == NULL) {
+    return;
+  }
+
+  memset(program, 0, sizeof(*program));
+  program->enabled = legacy->enabled;
+  program->start_hhmm = legacy->start_hhmm;
+  program->end_hhmm = legacy->end_hhmm;
+  program->valve_mask = legacy->valve_mask;
+  program->irrigation_min = legacy->irrigation_min;
+  program->wait_min = legacy->wait_min;
+  program->repeat_count = legacy->repeat_count;
+  program->days_mask = legacy->days_mask;
+  program->ec_set_x100 = legacy->ec_set_x100;
+  program->ph_set_x100 = legacy->ph_set_x100;
+  memcpy(program->fert_ratio_percent, legacy->fert_ratio_percent,
+         sizeof(program->fert_ratio_percent));
+  program->pre_flush_sec = IRRIGATION_DEFAULT_PRE_FLUSH_SEC;
+  program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
+  program->last_run_day = legacy->last_run_day;
+  program->last_run_minute = legacy->last_run_minute;
+}
+
+static void EEPROM_MigrateCompatProgram(const compat_irrigation_program_t *legacy,
+                                        irrigation_program_t *program) {
+  if (legacy == NULL || program == NULL) {
+    return;
+  }
+
+  memset(program, 0, sizeof(*program));
+  program->enabled = legacy->enabled;
+  program->start_hhmm = legacy->start_hhmm;
+  program->end_hhmm = legacy->end_hhmm;
+  program->valve_mask = legacy->valve_mask;
+  program->irrigation_min = legacy->irrigation_min;
+  program->wait_min = legacy->wait_min;
+  program->repeat_count = legacy->repeat_count;
+  program->days_mask = legacy->days_mask;
+  program->ec_set_x100 = legacy->ec_set_x100;
+  program->ph_set_x100 = legacy->ph_set_x100;
+  for (uint8_t i = 0U; i < IRRIGATION_EC_CHANNEL_COUNT; i++) {
+    program->fert_ratio_percent[i] = 25U;
+  }
+  program->pre_flush_sec = IRRIGATION_DEFAULT_PRE_FLUSH_SEC;
+  program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
+  program->last_run_day = legacy->last_run_day;
+  program->last_run_minute = legacy->last_run_minute;
+}
+
+static void EEPROM_MigrateLegacyProgram(
+    const legacy_irrigation_program_t *legacy,
+    irrigation_program_t *program) {
+  if (legacy == NULL || program == NULL) {
+    return;
+  }
+
+  memset(program, 0, sizeof(*program));
+  program->enabled = legacy->enabled;
+  program->start_hhmm = legacy->start_hhmm;
+  program->end_hhmm = legacy->end_hhmm;
+  program->valve_mask = legacy->valve_mask;
+  program->irrigation_min = legacy->irrigation_min;
+  program->wait_min = legacy->wait_min;
+  program->repeat_count = legacy->repeat_count;
+  program->days_mask = legacy->days_mask;
+  program->ec_set_x100 = legacy->ec_set_x100;
+  program->ph_set_x100 = legacy->ph_set_x100;
+  for (uint8_t i = 0U; i < IRRIGATION_EC_CHANNEL_COUNT; i++) {
+    program->fert_ratio_percent[i] = 25U;
+  }
+  program->pre_flush_sec = IRRIGATION_DEFAULT_PRE_FLUSH_SEC;
+  program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
+  program->last_run_day = legacy->last_run_day;
+  program->last_run_minute = legacy->last_run_minute;
+
+  for (uint8_t i = 0U; i < IRRIGATION_PROGRAM_VALVE_COUNT; i++) {
+    if ((program->valve_mask & (1U << i)) == 0U ||
+        legacy->valve_duration_min[i] == 0U) {
+      continue;
+    }
+
+    program->irrigation_min = legacy->valve_duration_min[i];
+    break;
+  }
+}
+
+static void EEPROM_MigrateLegacyBasicProgram(
+    const legacy_basic_irrigation_program_t *legacy,
+    irrigation_program_t *program) {
+  if (legacy == NULL || program == NULL) {
+    return;
+  }
+
+  memset(program, 0, sizeof(*program));
+  program->enabled = legacy->enabled;
+  program->start_hhmm = legacy->start_hhmm;
+  program->end_hhmm = legacy->end_hhmm;
+  program->valve_mask = legacy->valve_mask;
+  program->irrigation_min = legacy->irrigation_min;
+  program->wait_min = legacy->wait_min;
+  program->repeat_count = legacy->repeat_count;
+  program->days_mask = legacy->days_mask;
+  program->ec_set_x100 = legacy->ec_set_x100;
+  program->ph_set_x100 = legacy->ph_set_x100;
+  for (uint8_t i = 0U; i < IRRIGATION_EC_CHANNEL_COUNT; i++) {
+    program->fert_ratio_percent[i] = 25U;
+  }
+  program->pre_flush_sec = IRRIGATION_DEFAULT_PRE_FLUSH_SEC;
+  program->post_flush_sec = IRRIGATION_DEFAULT_POST_FLUSH_SEC;
+  program->last_run_day = legacy->last_run_day;
+  program->last_run_minute = legacy->last_run_minute;
+}
+
+static uint8_t EEPROM_LoadLegacyRecipePrograms(irrigation_program_t *programs,
+                                               uint8_t count) {
+  uint8_t max_count =
+      (count > IRRIGATION_PROGRAM_COUNT) ? IRRIGATION_PROGRAM_COUNT : count;
+
+  if (programs == NULL) {
+    return EEPROM_ERROR;
+  }
+
+  for (uint8_t i = 0U; i < max_count; i++) {
+    legacy_recipe_irrigation_program_t legacy = {0};
+
+    if (EEPROM_ReadBuffer(EEPROM_GetLegacyRecipeProgramAddress(i + 1U),
+                          (uint8_t *)&legacy, sizeof(legacy)) != EEPROM_OK) {
+      return EEPROM_ERROR;
+    }
+
+    if (!EEPROM_IsStructCRCValid(&legacy, sizeof(legacy), legacy.crc)) {
+      return EEPROM_ERROR;
+    }
+
+    EEPROM_MigrateLegacyRecipeProgram(&legacy, &programs[i]);
+  }
+
+  return EEPROM_OK;
+}
+
+static uint8_t EEPROM_LoadCompatPrograms(irrigation_program_t *programs,
+                                         uint8_t count) {
+  uint8_t max_count =
+      (count > IRRIGATION_PROGRAM_COUNT) ? IRRIGATION_PROGRAM_COUNT : count;
+
+  if (programs == NULL) {
+    return EEPROM_ERROR;
+  }
+
+  for (uint8_t i = 0U; i < max_count; i++) {
+    compat_irrigation_program_t legacy = {0};
+
+    if (EEPROM_ReadBuffer(EEPROM_GetCompatProgramAddress(i + 1U),
+                          (uint8_t *)&legacy, sizeof(legacy)) != EEPROM_OK) {
+      return EEPROM_ERROR;
+    }
+
+    if (!EEPROM_IsStructCRCValid(&legacy, sizeof(legacy), legacy.crc)) {
+      return EEPROM_ERROR;
+    }
+
+    EEPROM_MigrateCompatProgram(&legacy, &programs[i]);
+  }
+
+  return EEPROM_OK;
+}
+
+static uint8_t EEPROM_LoadLegacyPrograms(irrigation_program_t *programs,
+                                         uint8_t count) {
+  uint8_t max_count =
+      (count > IRRIGATION_PROGRAM_COUNT) ? IRRIGATION_PROGRAM_COUNT : count;
+
+  if (programs == NULL) {
+    return EEPROM_ERROR;
+  }
+
+  for (uint8_t i = 0U; i < max_count; i++) {
+    legacy_irrigation_program_t legacy = {0};
+
+    if (EEPROM_ReadBuffer(EEPROM_GetLegacyProgramAddress(i + 1U),
+                          (uint8_t *)&legacy, sizeof(legacy)) != EEPROM_OK) {
+      return EEPROM_ERROR;
+    }
+
+    if (!EEPROM_IsStructCRCValid(&legacy, sizeof(legacy), legacy.crc)) {
+      return EEPROM_ERROR;
+    }
+
+    EEPROM_MigrateLegacyProgram(&legacy, &programs[i]);
+  }
+
+  return EEPROM_OK;
+}
+
+static uint8_t EEPROM_LoadLegacyBasicPrograms(irrigation_program_t *programs,
+                                              uint8_t count) {
+  uint8_t max_count =
+      (count > IRRIGATION_PROGRAM_COUNT) ? IRRIGATION_PROGRAM_COUNT : count;
+
+  if (programs == NULL) {
+    return EEPROM_ERROR;
+  }
+
+  for (uint8_t i = 0U; i < max_count; i++) {
+    legacy_basic_irrigation_program_t legacy = {0};
+
+    if (EEPROM_ReadBuffer(EEPROM_GetLegacyBasicProgramAddress(i + 1U),
+                          (uint8_t *)&legacy, sizeof(legacy)) != EEPROM_OK) {
+      return EEPROM_ERROR;
+    }
+
+    if (!EEPROM_IsStructCRCValid(&legacy, sizeof(legacy), legacy.crc)) {
+      return EEPROM_ERROR;
+    }
+
+    EEPROM_MigrateLegacyBasicProgram(&legacy, &programs[i]);
+  }
+
+  return EEPROM_OK;
 }
 
 static void EEPROM_FlashSelect(void) {

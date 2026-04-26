@@ -1,6 +1,6 @@
 # 🌿 STM32F407VET6 Sulama Sistemi
 
-pH ve EC kontrollü, 8 parsel vanalı otomatik sulama kontrol sistemi.
+pH ve EC kontrollu, 8 parsel vanali, iki farkli musteri segmentine hizmet eden dinamik ihtiyac odakli otomatik sulama kontrol sistemi.
 
 ---
 
@@ -23,7 +23,10 @@ pH ve EC kontrollü, 8 parsel vanalı otomatik sulama kontrol sistemi.
 - ✅ **3.2" TFT Dokunmatik LCD** - 320x240 QVGA, ILI9341 driver
 - ✅ **pH Kontrolü** - 0-14 pH ölçüm aralığı, otomatik dozaj
 - ✅ **EC Kontrolü** - 0-20 mS/cm ölçüm aralığı, otomatik dozaj
-- ✅ **8 Kanal Vana Kontrolü** - Parsel bazlı sulama
+- ✅ **8 Kanal Vana Kontrolü** - Multi-zone, parsel bazlı sulama
+- ✅ **Hibrit Sulama Tetikleme** - Basit modda periyot, pro modda isik/sensor odakli karar
+- ✅ **3 Fazli Sulama Akisi** - Pre-flush, dosing, post-flush
+- ✅ **Iki Urun Seviyesi** - Dusuk maliyetli ciftci surumu ve ileri seviye isletme surumu
 - ✅ **Otomatik/Manuel Mod** - Esnek çalışma modları
 - ✅ **EEPROM Veri Saklama** - Parametre ve log kayıtları
 - ✅ **Kalibrasyon** - Çok noktalı pH/EC kalibrasyonu
@@ -211,6 +214,13 @@ ANA EKRAN
 | [Docs/03_Donanim_Semasi.md](Docs/03_Donanim_Semasi.md) | Donanım bağlantı şemaları |
 | [Docs/06_USB_Programlama_Protokolu.md](Docs/06_USB_Programlama_Protokolu.md) | USB ile program import/export komut seti |
 | [Docs/07_USB_Masaustu_Arayuzu.md](Docs/07_USB_Masaustu_Arayuzu.md) | USB uzerinden program okuma/yazma masaustu araci |
+| [Docs/08_Saha_Kontrol_MVP_Plani.md](Docs/08_Saha_Kontrol_MVP_Plani.md) | Parsel ve dozaj vanalari icin saha kontrol MVP kapsami ve refactor plani |
+| [Docs/09_Dinamik_Ihtiyac_Modeli.md](Docs/09_Dinamik_Ihtiyac_Modeli.md) | Statik saat yerine periyot, hacim ve gunes birikimi tabanli sulama mimarisi |
+| [Docs/10_Sensor_Genisleme_Plani.md](Docs/10_Sensor_Genisleme_Plani.md) | Dinamik ihtiyac modelini besleyen yeni sensorler, pin onerileri ve firmware etkileri |
+| [Docs/11_Urun_Segmentasyonu.md](Docs/11_Urun_Segmentasyonu.md) | Kucuk ciftci ve kurumsal tarim segmentleri icin iki kademeli urun stratejisi |
+| [Docs/12_Urun_Yol_Haritasi.md](Docs/12_Urun_Yol_Haritasi.md) | `Core` ve `Insight` segmentlerini ayirmadan ilerleyen fazli urun yol haritasi |
+| [Docs/13_Teknik_Backlog.md](Docs/13_Teknik_Backlog.md) | Yol haritasini `hemen firmware`, `ek donanim ister`, `ticari fark yaratir` backlog'una ceviren teknik liste |
+| [Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md](Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md) | Turkiye pazari kapasite varsayimlari ile mevcut urun hedeflerini karsilastiran hedef revizyonu |
 
 ---
 

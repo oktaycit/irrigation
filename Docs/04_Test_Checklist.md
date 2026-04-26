@@ -4,11 +4,11 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 
 ## 1. Derleme ve Programlama Oncesi
 
-- [ ] Proje warning'siz derleniyor
-- [ ] Uretilen `.elf` dosyasi olusuyor
-- [ ] Linker script dogru hedefi kullaniyor (`STM32F407VETX_FLASH.ld`)
-- [ ] MCU'ya flash islemi hatasiz tamamlandi
-- [ ] Kart yeniden baslatildiginda firmware aciliyor
+- [x] Proje warning'siz derleniyor
+- [x] Uretilen `.elf` dosyasi olusuyor
+- [x] Linker script dogru hedefi kullaniyor (`STM32F407VETX_FLASH.ld`)
+- [x] MCU'ya flash islemi hatasiz tamamlandi
+- [x] Kart yeniden baslatildiginda firmware aciliyor
 
 ## 2. Soguk Acilis ve Temel Baslangic
 
@@ -78,6 +78,11 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 - [ ] Dozaj sirasinda GUI guncellemesi devam ediyor
 - [ ] Dozaj tamamlaninca vana kapaniyor
 - [ ] Karistirma suresi tamamlaninca settling asamasina geciliyor
+- [ ] `Settings > Params` ekraninda PH/EC sayfalari arasinda gecis yapiliyor
+- [ ] `Settings > Params` uzerinden feedback, gain ve max cycle degerleri kaydediliyor
+- [ ] `feedback_delay_ms` arttirildiginda yeniden dozlama karari gecikiyor
+- [ ] `response_gain_percent` dusuruldugunde dozaj duty degeri daha yumusak artiyor
+- [ ] `max_correction_cycles` asildiginda sistem fault davranisina geciyor
 - [ ] Settling sonrasi sensorler yeniden kontrol ediliyor
 - [ ] pH dusuk oldugunda baz duzeltme davranisi test edildi veya eksik olarak not edildi
 
@@ -94,8 +99,9 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 ## 10. EEPROM ve Kalicilik
 
 - [ ] Ilk acilista EEPROM formatlama davranisi dogru
-- [ ] Parametreler EEPROM'a yazilabiliyor
-- [ ] Yeniden baslatma sonrasi parametreler korunuyor
+- [x] Parametreler EEPROM'a yazilabiliyor
+- [x] Yeniden baslatma sonrasi parametreler korunuyor
+- [ ] Dozaj tepki parametreleri restart sonrasi EEPROM'dan geri yukleniyor
 - [ ] Bozuk veri durumunda varsayilan degerlere donus davranisi test edildi
 - [ ] CRC kontrolu beklendigi gibi calisiyor veya eksikligi not edildi
 - [ ] Versiyon uyumsuzlugu davranisi test edildi veya eksikligi not edildi
@@ -119,9 +125,9 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 
 ## 13. Test Notlari
 
-- Test tarihi:
-- Test eden:
+- Test tarihi: 2026-04-25
+- Test eden: Codex + DAPLink
 - Kart revizyonu:
 - Sensor tipi:
-- Firmware build:
-- Notlar:
+- Firmware build: `Debug/irrigation.elf`
+- Notlar: `make -j4` guncel; OpenOCD CMSIS-DAP SWD baglantisi kuruldu, `program Debug/irrigation.elf verify reset exit` basarili, reset sonrasi CPU Thread modda calisti. USB CDC `PING` komutu `/dev/cu.usbmodem11102`, `/dev/tty.usbmodem11102` ve `/dev/cu.debug-console` uzerinden cevap vermedi; USB uygulama protokolu ayri incelenmeli.

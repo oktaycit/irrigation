@@ -72,6 +72,7 @@ void USB_CONFIG_FeedRx(const uint8_t *data, uint16_t length) {
   }
 
   g_usb_config.session_active = 1U;
+  LOW_POWER_UpdateActivity();
   if (g_usb_config.status == USB_CONFIG_STATUS_IDLE) {
     USB_CONFIG_SetStatus(USB_CONFIG_STATUS_CONNECTED, "USB session active");
   }
@@ -156,7 +157,7 @@ static void USB_CONFIG_HandleLine(char *line) {
     uint32_t program_id = 0U;
 
     if (token_count != 2U || !USB_CONFIG_ParseUInt32(tokens[1], &program_id) ||
-        program_id == 0U || program_id > VALVE_COUNT) {
+        program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT) {
       USB_CONFIG_SetStatus(USB_CONFIG_STATUS_PARSE_ERROR, "GET parse error");
       USB_CONFIG_SendError("BAD_GET", "Use GET,<id>");
       return;
@@ -204,15 +205,21 @@ static void USB_CONFIG_SendResponse(const char *prefix,
   }
 
   snprintf(response, sizeof(response),
-           "%s,%u,%u,%04u,%04u,%u,%u,%u,%u,%u,%d,%d\r\n", prefix,
-           (unsigned int)program_id, (unsigned int)program->enabled,
+           "%s,%u,%u,%04u,%04u,%u,%u,%u,%u,%u,%d,%d,%u,%u,%u,%u,%u,%u\r\n",
+           prefix, (unsigned int)program_id, (unsigned int)program->enabled,
            (unsigned int)program->start_hhmm, (unsigned int)program->end_hhmm,
            (unsigned int)program->valve_mask,
            (unsigned int)program->irrigation_min,
            (unsigned int)program->wait_min,
            (unsigned int)program->repeat_count,
            (unsigned int)program->days_mask, (int)program->ph_set_x100,
-           (int)program->ec_set_x100);
+           (int)program->ec_set_x100,
+           (unsigned int)program->fert_ratio_percent[0],
+           (unsigned int)program->fert_ratio_percent[1],
+           (unsigned int)program->fert_ratio_percent[2],
+           (unsigned int)program->fert_ratio_percent[3],
+           (unsigned int)program->pre_flush_sec,
+           (unsigned int)program->post_flush_sec);
   USB_CONFIG_SendText(response);
 }
 
@@ -272,13 +279,16 @@ static uint8_t USB_CONFIG_IsHHMMValid(uint32_t hhmm) {
 
 static uint8_t USB_CONFIG_ApplyProgramTokens(char **tokens, uint8_t token_count) {
   irrigation_program_t program = {0};
-  uint32_t values[9] = {0};
+  uint32_t values[18] = {0};
   int32_t ph_value = 0;
   int32_t ec_value = 0;
   uint8_t i = 0U;
   uint8_t program_id = 0U;
 
-  if (tokens == NULL || token_count != 12U) {
+  if (tokens == NULL ||
+      (token_count != 12U && token_count != 16U && token_count != 18U &&
+       token_count != 20U &&
+       token_count != 21U)) {
     USB_CONFIG_SendError(
         "BAD_SET",
         "Use SET,id,enabled,start,end,mask,irr,wait,repeat,days,ph,ec");
@@ -299,7 +309,7 @@ static uint8_t USB_CONFIG_ApplyProgramTokens(char **tokens, uint8_t token_count)
   }
 
   program_id = (uint8_t)values[0];
-  if (program_id == 0U || program_id > VALVE_COUNT) {
+  if (program_id == 0U || program_id > IRRIGATION_PROGRAM_COUNT) {
     USB_CONFIG_SendError("BAD_ID", "Program id out of range");
     return 0U;
   }
@@ -314,7 +324,8 @@ static uint8_t USB_CONFIG_ApplyProgramTokens(char **tokens, uint8_t token_count)
     return 0U;
   }
 
-  if (values[4] == 0U || (values[4] & ~((1UL << VALVE_COUNT) - 1UL)) != 0UL) {
+  if (values[4] == 0U ||
+      (values[4] & ~((1UL << IRRIGATION_PROGRAM_VALVE_COUNT) - 1UL)) != 0UL) {
     USB_CONFIG_SendError("BAD_MASK", "Valve mask is invalid");
     return 0U;
   }
@@ -360,6 +371,36 @@ static uint8_t USB_CONFIG_ApplyProgramTokens(char **tokens, uint8_t token_count)
   program.days_mask = (uint8_t)values[8];
   program.ph_set_x100 = (int16_t)ph_value;
   program.ec_set_x100 = (int16_t)ec_value;
+  if (token_count >= 16U) {
+    for (i = 12U; i <= 15U; i++) {
+      uint32_t ratio = 0U;
+      if (!USB_CONFIG_ParseUInt32(tokens[i], &ratio) || ratio > 100U) {
+        USB_CONFIG_SendError("BAD_RATIO", "Fertilizer ratios must be 0..100");
+        return 0U;
+      }
+      program.fert_ratio_percent[i - 12U] = (uint8_t)ratio;
+    }
+  }
+
+  if (token_count == 18U) {
+    uint32_t pre_flush_sec = 0U;
+    uint32_t post_flush_sec = 0U;
+
+    if (!USB_CONFIG_ParseUInt32(tokens[16], &pre_flush_sec) ||
+        !USB_CONFIG_ParseUInt32(tokens[17], &post_flush_sec)) {
+      USB_CONFIG_SendError("BAD_FLUSH", "Flush seconds must be unsigned");
+      return 0U;
+    }
+
+    if (pre_flush_sec > IRRIGATION_MAX_FLUSH_SEC ||
+        post_flush_sec > IRRIGATION_MAX_FLUSH_SEC) {
+      USB_CONFIG_SendError("BAD_FLUSH", "Flush seconds must be 0..900");
+      return 0U;
+    }
+
+    program.pre_flush_sec = (uint16_t)pre_flush_sec;
+    program.post_flush_sec = (uint16_t)post_flush_sec;
+  }
 
   IRRIGATION_CTRL_SetProgram(program_id, &program);
 
@@ -377,7 +418,8 @@ static void USB_CONFIG_SendHelp(void) {
   USB_CONFIG_SendText("OK,HELP,GET,<id>\r\n");
   USB_CONFIG_SendText(
       "OK,HELP,SET,<id>,<enabled>,<start>,<end>,<mask>,<irr>,<wait>,<repeat>,"
-      "<days>,<ph_x100>,<ec_x100>\r\n");
+      "<days>,<ph_x100>,<ec_x100>,<fert_a_pct>,<fert_b_pct>,<fert_c_pct>,"
+      "<fert_d_pct>,<pre_flush_sec>,<post_flush_sec>\r\n");
 }
 
 static void USB_CONFIG_ExportAll(void) {
@@ -385,7 +427,7 @@ static void USB_CONFIG_ExportAll(void) {
   uint8_t i = 0U;
 
   USB_CONFIG_SendText("OK,LIST,BEGIN\r\n");
-  for (i = 0U; i < VALVE_COUNT; i++) {
+  for (i = 0U; i < IRRIGATION_PROGRAM_COUNT; i++) {
     IRRIGATION_CTRL_GetProgram(i + 1U, &program);
     USB_CONFIG_SendResponse("PROGRAM", &program, i + 1U);
   }

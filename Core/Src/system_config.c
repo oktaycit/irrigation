@@ -16,6 +16,7 @@ void System_Init(void) {
 
   CRC_Init();
   gSystemStatus.rtc_ok = RTC_Init();
+  LOW_POWER_Init();
 
   LCD_Init();
   gSystemStatus.lcd_ok = 1U;
@@ -72,7 +73,10 @@ void System_HMITask(void) { GUI_Update(); }
 
 void System_ProgramManagementTask(void) { IRRIGATION_CTRL_CheckSchedules(); }
 
-void System_IrrigationTask(void) { IRRIGATION_CTRL_Update(); }
+void System_IrrigationTask(void) {
+  VALVES_Update();
+  IRRIGATION_CTRL_Update();
+}
 
 void System_SafetyMonitoringTask(void) {
   (void)IRRIGATION_CTRL_RunSafetyChecks();

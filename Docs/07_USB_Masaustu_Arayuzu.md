@@ -18,9 +18,10 @@ python3 tools/usb_programmer_gui.py
 1. USB port listesinden kartin CDC portunu secin.
 2. `Connect` ile baglantiyi dogrulayin.
 3. `Read All` ile cihazdaki programlari cekin.
-4. Soldan bir program secin.
-5. Sag tarafta alanlari duzenleyin.
-6. `Save Selected` ile karta yazin.
+4. Arac once `LIST` komutunu kullanir; gerekirse eski cihazlar icin tek tek `GET` akisina dusebilir.
+5. Soldan bir program secin.
+6. Sag tarafta alanlari duzenleyin.
+7. `Save / Kaydet` veya alttaki `Kaydet` ile karta yazin.
 
 ## Alanlar
 
@@ -29,6 +30,8 @@ python3 tools/usb_programmer_gui.py
 - `Days Mask`: haftanin gunlerini checkbox ile olusturur
 - `pH x100`: ornek `6.50 -> 650`
 - `EC x100`: ornek `1.80 -> 180`
+- `Fertilizer Mix (%)`: A/B/C/D gubre oranlari. Toplamin 100 olmasi gerekmez;
+  firmware oranlari kendi icinde normalize eder.
 
 ## Hata Ayiklama
 
@@ -43,4 +46,6 @@ python3 tools/usb_programmer_gui.py --port /dev/cu.usbmodem207E377C52321 --list
 
 - Arac harici Python kutuphanesi istemez; `tkinter` ve POSIX seri ayarlari ile calisir.
 - macOS uzerinde tipik port adi `/dev/cu.usbmodem*` olur.
+- Linux tarafinda tipik port adlari `/dev/ttyACM*` veya `/dev/ttyUSB*` olur.
+- Arac mevcut firmware'in temel USB protokolunu kullanir.
 - Program yazma islemi mevcut firmware'deki `SET` komutunu kullanir ve EEPROM'a kalici olarak kaydeder.

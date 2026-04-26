@@ -25,6 +25,7 @@ PORT_PATTERNS = (
 )
 
 DAY_LABELS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+PROGRAM_COUNT = 8
 VALVE_COUNT = 8
 
 
@@ -63,6 +64,12 @@ class ProgramConfig:
     days_mask: int
     ph_x100: int
     ec_x100: int
+    fert_a_pct: int = 25
+    fert_b_pct: int = 25
+    fert_c_pct: int = 25
+    fert_d_pct: int = 25
+    pre_flush_sec: int = 60
+    post_flush_sec: int = 120
 
     @classmethod
     def from_protocol_line(cls, line: str) -> "ProgramConfig":
@@ -74,11 +81,17 @@ class ProgramConfig:
         else:
             raise ValueError(f"Unexpected program line: {line}")
 
-        if len(payload) != 11:
-            raise ValueError(f"Expected 11 fields, got {len(payload)}")
+        if len(payload) not in (11, 15, 17, 19, 20):
+            raise ValueError(f"Expected 11, 15, 17, 19 or 20 fields, got {len(payload)}")
 
         values = [int(item) for item in payload]
-        return cls(*values)
+        if len(values) == 11:
+            values.extend([25, 25, 25, 25, 60, 120])
+        elif len(values) == 15:
+            values.extend([60, 120])
+        elif len(values) in (19, 20):
+            values = values[:15] + [60, 120]
+        return cls(*values[:17])
 
     def to_set_command(self) -> str:
         return (
@@ -86,7 +99,9 @@ class ProgramConfig:
             f"{self.program_id},{self.enabled},{self.start_hhmm:04d},"
             f"{self.end_hhmm:04d},{self.valve_mask},{self.irrigation_min},"
             f"{self.wait_min},{self.repeat_count},{self.days_mask},"
-            f"{self.ph_x100},{self.ec_x100}"
+            f"{self.ph_x100},{self.ec_x100},{self.fert_a_pct},"
+            f"{self.fert_b_pct},{self.fert_c_pct},{self.fert_d_pct},"
+            f"{self.pre_flush_sec},{self.post_flush_sec}"
         )
 
     def summary(self) -> str:
@@ -225,7 +240,30 @@ class UsbConfigClient:
         return "OK,PONG"
 
     def list_programs(self) -> list[ProgramConfig]:
-        return [self.get_program(program_id) for program_id in range(1, VALVE_COUNT + 1)]
+        lines = self.transact(
+            "LIST", timeout=4.0, idle_timeout=0.35, until_line="OK,LIST,END"
+        )
+        self._raise_if_error(lines)
+
+        begin_seen = False
+        end_seen = False
+        programs: list[ProgramConfig] = []
+
+        for line in lines:
+            if line == "OK,LIST,BEGIN":
+                begin_seen = True
+                continue
+            if line == "OK,LIST,END":
+                end_seen = True
+                break
+            if line.startswith("PROGRAM,"):
+                programs.append(ProgramConfig.from_protocol_line(line))
+
+        if begin_seen and end_seen and programs:
+            programs.sort(key=lambda program: program.program_id)
+            return programs
+
+        return [self.get_program(program_id) for program_id in range(1, PROGRAM_COUNT + 1)]
 
     def get_program(self, program_id: int) -> ProgramConfig:
         for _ in range(3):
@@ -254,7 +292,7 @@ class UsbProgrammerApp(tk.Tk):
         super().__init__()
         self.title("Irrigation USB Programmer")
         self.geometry("1080x720")
-        self.minsize(980, 680)
+        self.minsize(980, 640)
 
         self.client = UsbConfigClient()
         self.programs: dict[int, ProgramConfig] = {}
@@ -274,6 +312,9 @@ class UsbProgrammerApp(tk.Tk):
         self.repeat_var = tk.StringVar(value="1")
         self.ph_var = tk.StringVar(value="650")
         self.ec_var = tk.StringVar(value="180")
+        self.fert_ratio_vars = [tk.StringVar(value="25") for _ in range(4)]
+        self.pre_flush_var = tk.StringVar(value="60")
+        self.post_flush_var = tk.StringVar(value="120")
         self.valve_vars = [tk.IntVar(value=0) for _ in range(VALVE_COUNT)]
         self.day_vars = [tk.IntVar(value=1) for _ in range(7)]
 
@@ -285,7 +326,7 @@ class UsbProgrammerApp(tk.Tk):
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
-        self.rowconfigure(3, weight=1)
+        self.rowconfigure(3, weight=0)
 
         top = ttk.Frame(self, padding=12)
         top.grid(row=0, column=0, sticky="ew")
@@ -303,6 +344,9 @@ class UsbProgrammerApp(tk.Tk):
         ttk.Button(top, text="Ping", command=self.ping_device).grid(row=0, column=4, padx=4)
         ttk.Button(top, text="Read All", command=self.load_all_programs).grid(
             row=0, column=5, padx=4
+        )
+        ttk.Button(top, text="Save / Kaydet", command=self.save_selected_program).grid(
+            row=0, column=6, padx=(8, 0)
         )
 
         status = ttk.Frame(self, padding=(12, 0, 12, 8))
@@ -338,7 +382,7 @@ class UsbProgrammerApp(tk.Tk):
         self.id_spin = ttk.Spinbox(
             right,
             from_=1,
-            to=VALVE_COUNT,
+            to=PROGRAM_COUNT,
             textvariable=self.selected_program_var,
             width=8,
             command=self.on_id_spin_changed,
@@ -370,33 +414,53 @@ class UsbProgrammerApp(tk.Tk):
         ttk.Entry(right, textvariable=self.repeat_var).grid(
             row=3, column=1, sticky="ew", pady=4
         )
-        ttk.Label(right, text="pH x100").grid(row=3, column=2, sticky="w", pady=4)
-        ttk.Entry(right, textvariable=self.ph_var).grid(row=3, column=3, sticky="ew", pady=4)
+        ttk.Label(right, text="").grid(row=3, column=2, sticky="w", pady=4)
 
-        ttk.Label(right, text="EC x100").grid(row=4, column=0, sticky="w", pady=4)
-        ttk.Entry(right, textvariable=self.ec_var).grid(row=4, column=1, sticky="ew", pady=4)
+        ttk.Label(right, text="pH x100").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Entry(right, textvariable=self.ph_var).grid(row=4, column=1, sticky="ew", pady=4)
+        ttk.Label(right, text="EC x100").grid(row=4, column=2, sticky="w", pady=4)
+        ttk.Entry(right, textvariable=self.ec_var).grid(row=4, column=3, sticky="ew", pady=4)
         ttk.Label(right, text="Example: pH 6.50 -> 650, EC 1.80 -> 180").grid(
-            row=4, column=2, columnspan=2, sticky="w", pady=4
+            row=5, column=0, columnspan=4, sticky="w", pady=4
         )
 
         valves = ttk.LabelFrame(right, text="Valve Mask", padding=10)
-        valves.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(10, 6))
+        valves.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(10, 6))
         for index, variable in enumerate(self.valve_vars):
             ttk.Checkbutton(valves, text=f"Valve {index + 1}", variable=variable).grid(
                 row=index // 4, column=index % 4, padx=6, pady=4, sticky="w"
             )
 
         days = ttk.LabelFrame(right, text="Days Mask", padding=10)
-        days.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(6, 10))
+        days.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(6, 10))
         for index, label in enumerate(DAY_LABELS):
             ttk.Checkbutton(days, text=label, variable=self.day_vars[index]).grid(
                 row=0, column=index, padx=6, pady=4, sticky="w"
             )
 
+        ratios = ttk.LabelFrame(right, text="Fertilizer Mix (%)", padding=10)
+        ratios.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        for index, label in enumerate(("A", "B", "C", "D")):
+            ttk.Label(ratios, text=label).grid(row=0, column=index * 2, padx=(6, 4))
+            ttk.Entry(ratios, textvariable=self.fert_ratio_vars[index], width=6).grid(
+                row=0, column=(index * 2) + 1, padx=(0, 10), sticky="w"
+            )
+
+        flush = ttk.LabelFrame(right, text="Flush Timing", padding=10)
+        flush.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        ttk.Label(flush, text="Pre-flush (sec)").grid(row=0, column=0, padx=(6, 4), sticky="w")
+        ttk.Entry(flush, textvariable=self.pre_flush_var, width=8).grid(
+            row=0, column=1, padx=(0, 16), sticky="w"
+        )
+        ttk.Label(flush, text="Post-flush (sec)").grid(row=0, column=2, padx=(6, 4), sticky="w")
+        ttk.Entry(flush, textvariable=self.post_flush_var, width=8).grid(
+            row=0, column=3, padx=(0, 10), sticky="w"
+        )
+
         button_row = ttk.Frame(right)
-        button_row.grid(row=7, column=0, columnspan=4, sticky="ew")
+        button_row.grid(row=10, column=0, columnspan=4, sticky="ew")
         button_row.columnconfigure(0, weight=1)
-        ttk.Button(button_row, text="Save Selected", command=self.save_selected_program).grid(
+        ttk.Button(button_row, text="Kaydet", command=self.save_selected_program).grid(
             row=0, column=0, sticky="ew", padx=(0, 8)
         )
         ttk.Button(button_row, text="Reload Selected", command=self.load_selected_program).grid(
@@ -407,7 +471,7 @@ class UsbProgrammerApp(tk.Tk):
         log_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 12))
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
-        self.log_text = tk.Text(log_frame, height=10, wrap="word", state="disabled")
+        self.log_text = tk.Text(log_frame, height=6, wrap="word", state="disabled")
         self.log_text.grid(row=0, column=0, sticky="nsew")
 
     def refresh_ports(self) -> None:
@@ -569,6 +633,18 @@ class UsbProgrammerApp(tk.Tk):
         self.repeat_var.set(str(program.repeat_count))
         self.ph_var.set(str(program.ph_x100))
         self.ec_var.set(str(program.ec_x100))
+        self.pre_flush_var.set(str(program.pre_flush_sec))
+        self.post_flush_var.set(str(program.post_flush_sec))
+        for variable, value in zip(
+            self.fert_ratio_vars,
+            (
+                program.fert_a_pct,
+                program.fert_b_pct,
+                program.fert_c_pct,
+                program.fert_d_pct,
+            ),
+        ):
+            variable.set(str(value))
 
         for index, variable in enumerate(self.valve_vars):
             variable.set(1 if (program.valve_mask & (1 << index)) else 0)
@@ -577,8 +653,8 @@ class UsbProgrammerApp(tk.Tk):
 
     def read_form(self) -> ProgramConfig:
         program_id = int(self.selected_program_var.get())
-        if program_id < 1 or program_id > VALVE_COUNT:
-            raise ValueError(f"Program ID must be 1..{VALVE_COUNT}")
+        if program_id < 1 or program_id > PROGRAM_COUNT:
+            raise ValueError(f"Program ID must be 1..{PROGRAM_COUNT}")
 
         valve_mask = 0
         for index, variable in enumerate(self.valve_vars):
@@ -615,6 +691,24 @@ class UsbProgrammerApp(tk.Tk):
         except ValueError as exc:
             raise ValueError("EC must be x100 whole number, example 1.80 -> 180") from exc
 
+        try:
+            pre_flush_sec = int(self.pre_flush_var.get().strip())
+        except ValueError as exc:
+            raise ValueError("Pre-flush seconds must be a whole number") from exc
+
+        try:
+            post_flush_sec = int(self.post_flush_var.get().strip())
+        except ValueError as exc:
+            raise ValueError("Post-flush seconds must be a whole number") from exc
+
+        fert_ratios: list[int] = []
+        for label, variable in zip(("A", "B", "C", "D"), self.fert_ratio_vars):
+            try:
+                ratio = int(variable.get().strip())
+            except ValueError as exc:
+                raise ValueError(f"Fertilizer {label} percent must be a whole number") from exc
+            fert_ratios.append(ratio)
+
         if valve_mask == 0:
             raise ValueError("Select at least one valve")
         if days_mask == 0:
@@ -629,6 +723,14 @@ class UsbProgrammerApp(tk.Tk):
             raise ValueError("pH x100 must be 0..1400")
         if ec_x100 < 0 or ec_x100 > 2000:
             raise ValueError("EC x100 must be 0..2000")
+        if pre_flush_sec < 0 or pre_flush_sec > 900:
+            raise ValueError("Pre-flush seconds must be 0..900")
+        if post_flush_sec < 0 or post_flush_sec > 900:
+            raise ValueError("Post-flush seconds must be 0..900")
+        if any(ratio < 0 or ratio > 100 for ratio in fert_ratios):
+            raise ValueError("Fertilizer mix percentages must be 0..100")
+        if sum(fert_ratios) == 0:
+            raise ValueError("At least one fertilizer mix percentage must be greater than 0")
 
         return ProgramConfig(
             program_id=program_id,
@@ -642,6 +744,12 @@ class UsbProgrammerApp(tk.Tk):
             days_mask=days_mask,
             ph_x100=ph_x100,
             ec_x100=ec_x100,
+            fert_a_pct=fert_ratios[0],
+            fert_b_pct=fert_ratios[1],
+            fert_c_pct=fert_ratios[2],
+            fert_d_pct=fert_ratios[3],
+            pre_flush_sec=pre_flush_sec,
+            post_flush_sec=post_flush_sec,
         )
 
     def _refresh_listbox_entry(self, program: ProgramConfig) -> None:

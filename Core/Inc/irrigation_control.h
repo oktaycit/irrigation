@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 /* Includes ------------------------------------------------------------------*/
+#include "irrigation_types.h"
 #include "sensors.h"
 #include "valves.h"
 #include <stdbool.h>
@@ -24,93 +25,6 @@ extern "C" {
 #define IRRIGATION_MIXING_TIME 30U    /* Karıştırma süresi (saniye) */
 #define IRRIGATION_SETTLING_TIME 10U  /* Çökeltme süresi (saniye) */
 #define IRRIGATION_SAMPLE_INTERVAL 5U /* Örnek alma aralığı (saniye) */
-
-/* Kontrol Durumları --------------------------------------------------------*/
-typedef enum {
-  CTRL_STATE_IDLE = 0,
-  CTRL_STATE_CHECKING_SENSORS,
-  CTRL_STATE_PH_ADJUSTING,
-  CTRL_STATE_EC_ADJUSTING,
-  CTRL_STATE_MIXING,
-  CTRL_STATE_SETTLING,
-  CTRL_STATE_PARCEL_WATERING,
-  CTRL_STATE_WAITING,
-  CTRL_STATE_ERROR,
-  CTRL_STATE_EMERGENCY_STOP
-} control_state_t;
-
-typedef enum {
-  PROGRAM_STATE_IDLE = 0,
-  PROGRAM_STATE_VALVE_ACTIVE,
-  PROGRAM_STATE_WAITING,
-  PROGRAM_STATE_NEXT_VALVE,
-  PROGRAM_STATE_ERROR
-} program_state_t;
-
-/* Hata Kodları -------------------------------------------------------------*/
-typedef enum {
-  ERR_NONE = 0,
-  ERR_PH_SENSOR_FAULT,
-  ERR_EC_SENSOR_FAULT,
-  ERR_PH_OUT_OF_RANGE,
-  ERR_EC_OUT_OF_RANGE,
-  ERR_VALVE_STUCK,
-  ERR_TIMEOUT,
-  ERR_LOW_WATER_LEVEL,
-  ERR_OVERCURRENT,
-  ERR_COMMUNICATION,
-  ERR_MAX
-} error_code_t;
-
-/* pH Kontrol Yapısı --------------------------------------------------------*/
-typedef struct {
-  float target;
-  float min_limit;
-  float max_limit;
-  float hysteresis;
-  uint8_t acid_valve_id; /* Asit dozaj vanası */
-  uint8_t base_valve_id; /* Baz dozaj vanası (opsiyonel) */
-  uint32_t dose_time_ms; /* Dozlama süresi */
-  uint32_t wait_time_ms; /* Bekleme süresi */
-  uint8_t auto_adjust_enabled;
-} ph_control_params_t;
-
-/* EC Kontrol Yapısı --------------------------------------------------------*/
-typedef struct {
-  float target;
-  float min_limit;
-  float max_limit;
-  float hysteresis;
-  uint8_t fertilizer_valve_id; /* Gübre dozaj vanası */
-  uint32_t dose_time_ms;
-  uint32_t wait_time_ms;
-  uint8_t auto_adjust_enabled;
-} ec_control_params_t;
-
-/* Parsel Sulama Yapısı -----------------------------------------------------*/
-typedef struct {
-  uint8_t parcel_id;
-  uint8_t valve_id;
-  uint32_t start_time;
-  uint32_t duration_sec;
-  uint32_t elapsed_sec;
-  uint8_t is_complete;
-  uint8_t is_skipped;
-} parcel_watering_t;
-
-/* Sistem Zamanlayıcıları ---------------------------------------------------*/
-typedef struct {
-  uint32_t system_start_time;
-  uint32_t last_ph_check;
-  uint32_t last_ec_check;
-  uint32_t last_irrigation;
-  uint32_t state_entry_time;
-  uint32_t dose_start_time;
-  uint32_t mixing_start_time;
-  uint32_t mixing_duration_ms;
-  uint32_t settling_start_time;
-  uint32_t settling_duration_ms;
-} irrigation_timers_t;
 
 /* Ana Kontrol Yapısı -------------------------------------------------------*/
 typedef struct {
@@ -161,10 +75,24 @@ void IRRIGATION_CTRL_SetPHParams(float target, float min, float max,
                                  float hyst);
 void IRRIGATION_CTRL_SetECParams(float target, float min, float max,
                                  float hyst);
+void IRRIGATION_CTRL_SetPHDosingDuty(uint8_t duty_percent);
+void IRRIGATION_CTRL_SetECDosingDuty(uint8_t duty_percent);
+void IRRIGATION_CTRL_SetPHDosingResponse(uint32_t feedback_delay_ms,
+                                         uint8_t response_gain_percent,
+                                         uint8_t max_correction_cycles);
+void IRRIGATION_CTRL_SetECDosingResponse(uint32_t feedback_delay_ms,
+                                         uint8_t response_gain_percent,
+                                         uint8_t max_correction_cycles);
+void IRRIGATION_CTRL_SetECRecipe(const uint8_t *ratio_percent, uint8_t count);
+void IRRIGATION_CTRL_GetECRecipe(uint8_t *ratio_percent, uint8_t count);
 void IRRIGATION_CTRL_GetPHParams(ph_control_params_t *params);
 void IRRIGATION_CTRL_GetECParams(ec_control_params_t *params);
+void IRRIGATION_CTRL_SaveDosingResponseParams(void);
 void IRRIGATION_CTRL_SetParcelDuration(uint8_t parcel_id,
                                        uint32_t duration_sec);
+void IRRIGATION_CTRL_SetParcelEnabled(uint8_t parcel_id, uint8_t enabled);
+void IRRIGATION_CTRL_SetParcelConfig(uint8_t parcel_id, uint32_t duration_sec,
+                                     uint8_t enabled);
 
 /* Control Functions --------------------------------------------------------*/
 void IRRIGATION_CTRL_Start(void);
@@ -220,53 +148,18 @@ error_code_t IRRIGATION_CTRL_GetLastError(void);
 uint8_t IRRIGATION_CTRL_HasErrors(void);
 const char *IRRIGATION_CTRL_GetErrorString(error_code_t error);
 void IRRIGATION_CTRL_EmergencyStop(void);
+uint8_t IRRIGATION_CTRL_AcknowledgeAlarm(void);
+uint8_t IRRIGATION_CTRL_ResetAlarm(void);
+uint8_t IRRIGATION_CTRL_CanResetAlarm(void);
+uint8_t IRRIGATION_CTRL_IsAlarmAcknowledged(void);
+const char *IRRIGATION_CTRL_GetAlarmDetailText(void);
+const char *IRRIGATION_CTRL_GetAlarmActionText(void);
 
 /* Statistics ---------------------------------------------------------------*/
 uint32_t IRRIGATION_CTRL_GetTotalWateringTime(void);
 uint32_t IRRIGATION_CTRL_GetTotalParcelCount(void);
 uint32_t IRRIGATION_CTRL_GetCurrentRunTime(void);
 void IRRIGATION_CTRL_ResetStatistics(void);
-
-/* Schedule Functions -------------------------------------------------------*/
-typedef struct {
-  uint8_t enabled;
-  uint8_t hour;
-  uint8_t minute;
-  uint8_t days_of_week; /* Bitmask: Pzt=0, Sal=1, ... */
-  uint8_t parcel_id;
-} irrigation_schedule_t;
-
-typedef struct {
-  uint8_t enabled;
-  uint16_t start_hhmm;
-  uint16_t end_hhmm;
-  uint8_t valve_mask;
-  uint16_t irrigation_min;
-  uint16_t wait_min;
-  uint8_t repeat_count;
-  uint8_t days_mask;
-  int16_t ec_set_x100;
-  int16_t ph_set_x100;
-  uint16_t last_run_day;
-  uint16_t last_run_minute;
-  uint8_t reserved[4];
-  uint16_t crc;
-} irrigation_program_t;
-
-typedef struct {
-  uint8_t valid;
-  uint8_t active_program_id;
-  uint8_t active_valve_index;
-  uint8_t repeat_index;
-  uint8_t program_state;
-  uint8_t active_valve_id;
-  uint16_t remaining_sec;
-  int16_t ec_target_x100;
-  int16_t ph_target_x100;
-  uint8_t error_code;
-  uint8_t reserved[5];
-  uint16_t crc;
-} irrigation_runtime_backup_t;
 
 void IRRIGATION_CTRL_SetSchedule(uint8_t slot, irrigation_schedule_t *sched);
 void IRRIGATION_CTRL_GetSchedule(uint8_t slot, irrigation_schedule_t *sched);

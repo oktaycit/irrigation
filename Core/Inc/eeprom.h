@@ -15,7 +15,7 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include <stdbool.h>
 #include <stdint.h>
-#include "irrigation_control.h"
+#include "irrigation_types.h"
 #include "touch_xpt2046.h"
 
 /* EEPROM Configuration -----------------------------------------------------*/
@@ -24,6 +24,7 @@ extern "C" {
 #define EEPROM_PAGE_SIZE 64U     /* 64 Byte page size */
 #define EEPROM_TOTAL_SIZE 32768U /* 32 KBit = 4 KByte */
 #define EEPROM_SYSTEM_MODE_MARKER 0xA5U
+#define EEPROM_SYSTEM_SCHEMA_VERSION 2U
 
 /* EEPROM Memory Map --------------------------------------------------------*/
 /* Sayfa 0-1: Magic Number ve Versiyon */
@@ -45,8 +46,8 @@ extern "C" {
 /* Sayfa 20-23: Sulama Programlari */
 #define EEPROM_ADDR_PROGRAMS 0x0500U
 
-/* Sayfa 24-25: Runtime Backup */
-#define EEPROM_ADDR_RUNTIME_BACKUP 0x0600U
+/* Sayfa 26-27: Runtime Backup */
+#define EEPROM_ADDR_RUNTIME_BACKUP 0x0700U
 
 /* Sayfa 16-31: Sulama Logları (dairesel buffer) */
 #define EEPROM_ADDR_LOGS 0x0800U
@@ -87,7 +88,13 @@ typedef struct {
   float ec_max;
   uint32_t irrigation_interval; /* dakika */
   uint8_t auto_mode_enabled;
-  uint8_t reserved[2];
+  uint32_t ph_feedback_delay_ms;
+  uint32_t ec_feedback_delay_ms;
+  uint8_t ph_response_gain_percent;
+  uint8_t ec_response_gain_percent;
+  uint8_t ph_max_correction_cycles;
+  uint8_t ec_max_correction_cycles;
+  uint8_t reserved[3];
   uint16_t crc;
 } eeprom_system_t;
 
@@ -119,6 +126,7 @@ typedef struct {
   uint32_t wait_sec;
   uint8_t enabled;
   uint8_t reserved[3];
+  uint16_t crc;
 } eeprom_parcel_t;
 
 typedef struct {

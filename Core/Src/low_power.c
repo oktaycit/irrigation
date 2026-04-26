@@ -12,8 +12,10 @@
 extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
+extern TIM_HandleTypeDef htim4;
 extern UART_HandleTypeDef huart1;
 extern I2C_HandleTypeDef hi2c1;
+extern SPI_HandleTypeDef hspi1;
 extern SPI_HandleTypeDef hspi2;
 extern ADC_HandleTypeDef hadc1;
 extern volatile uint16_t g_adc_dma_buffer[ADC_DMA_BUFFER_SIZE];
@@ -25,14 +27,6 @@ static uint32_t g_last_activity_time = 0;
 static uint8_t g_context_saved = 0;
 
 /* Register backup values for Stop mode */
-static struct {
-    uint32_t sysclk;
-    uint32_t hclk;
-    uint32_t pclk1;
-    uint32_t pclk2;
-    uint32_t flash_latency;
-} g_register_backup;
-
 /**
  * @brief  Initialize Low-Power functionality
  */
@@ -42,15 +36,15 @@ void LOW_POWER_Init(void) {
     g_auto_sleep_timeout = 300000;  /* 5 minutes default */
     g_last_activity_time = HAL_GetTick();
     
-    /* Configure wakeup pins */
-    LOW_POWER_ConfigWakeupPin();
-    
     /* Enable Power Clock */
     __HAL_RCC_PWR_CLK_ENABLE();
-    
-    /* Enable Wakeup pin */
-    HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1);  /* PA0 */
-    HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN2);  /* PA2 */
+
+    /*
+     * PA0 is used as ADC1_IN0 for pH sensing on this board, so we avoid
+     * enabling/configuring WKUP1 here. Touch EXTI and RTC alarm are enough for
+     * the sleep/stop paths used by the application.
+     */
+    LOW_POWER_ConfigWakeupPin();
 }
 
 /**
@@ -76,23 +70,26 @@ void LOW_POWER_EnterMode(low_power_mode_t mode) {
  * @brief  Enter Sleep mode
  */
 void LOW_POWER_EnterSleep(uint32_t wakeup_sources) {
-    /* Update last activity time */
-    g_last_activity_time = HAL_GetTick();
-    
+    uint32_t wakeup_source;
+
     /* Configure wakeup sources */
     g_wakeup_sources = wakeup_sources;
+    g_current_mode = LOW_POWER_SLEEP;
     
     /* Enter Sleep mode */
     HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-    
-    /* Exit from Sleep mode - restore clocks */
-    SystemClock_Config();
+
+    wakeup_source = LOW_POWER_GetWakeupSource();
+    g_current_mode = LOW_POWER_RUN;
+    LOW_POWER_OnWakeup(wakeup_source);
 }
 
 /**
  * @brief  Enter Stop mode
  */
 void LOW_POWER_EnterStop(uint32_t wakeup_sources) {
+    uint32_t wakeup_source;
+
     /* Save context */
     LOW_POWER_SaveContext();
     g_context_saved = 1;
@@ -102,6 +99,7 @@ void LOW_POWER_EnterStop(uint32_t wakeup_sources) {
     
     /* Configure wakeup sources */
     g_wakeup_sources = wakeup_sources;
+    g_current_mode = LOW_POWER_STOP;
     
     /* Configure RTC wakeup if enabled */
     if (wakeup_sources & WAKEUP_SOURCE_RTC) {
@@ -116,11 +114,14 @@ void LOW_POWER_EnterStop(uint32_t wakeup_sources) {
     
     /* Restore peripherals */
     LOW_POWER_EnablePeripherals();
+
+    wakeup_source = LOW_POWER_GetWakeupSource();
     
     /* Clear wakeup flags */
     LOW_POWER_ClearWakeupFlags();
     
     g_current_mode = LOW_POWER_RUN;
+    LOW_POWER_OnWakeup(wakeup_source);
 }
 
 /**
@@ -148,21 +149,21 @@ void LOW_POWER_DisablePeripherals(void) {
     HAL_ADC_Stop_DMA(&hadc1);
     
     /* Stop timers */
-    HAL_TIM_Base_Stop(&htim3);
+    HAL_TIM_Base_Stop_IT(&htim3);
     HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
     HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_2);
     
-    /* Disable UART */
-    HAL_UART_Suspend_IT(&huart1);
+    /* Stop serial DMA before clocks are gated in Stop mode. */
+    HAL_UART_DMAStop(&huart1);
+    HAL_UART_DeInit(&huart1);
     
-    /* Disable I2C */
-    HAL_I2C_MspDeInit(&hi2c1);
+    /* Disable synchronous peripherals cleanly. Init structs are retained. */
+    HAL_I2C_DeInit(&hi2c1);
     
-    /* Disable SPI */
-    HAL_SPI_Suspend(&hspi2);
-    
-    /* Reduce clock speed before entering STOP */
-    __HAL_RCC_HSI_DISABLE();
+    HAL_SPI_DeInit(&hspi1);
+    HAL_SPI_DeInit(&hspi2);
 }
 
 /**
@@ -170,21 +171,24 @@ void LOW_POWER_DisablePeripherals(void) {
  */
 void LOW_POWER_EnablePeripherals(void) {
     /* Re-enable I2C */
-    HAL_I2C_MspInit(&hi2c1);
+    HAL_I2C_Init(&hi2c1);
+    
+    /* Restart SPI */
+    HAL_SPI_Init(&hspi1);
+    HAL_SPI_Init(&hspi2);
+
+    /* Restart UART */
+    HAL_UART_Init(&huart1);
     
     /* Restart timers */
-    HAL_TIM_Base_Start(&htim3);
+    HAL_TIM_Base_Start_IT(&htim3);
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
     
     /* Restart ADC DMA */
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&g_adc_dma_buffer, ADC_DMA_BUFFER_SIZE);
-    
-    /* Restart UART */
-    HAL_UART_Resume_IT(&huart1);
-    
-    /* Restart SPI */
-    HAL_SPI_Resume(&hspi2);
 }
 
 /**
@@ -218,7 +222,7 @@ uint32_t LOW_POWER_GetWakeupSource(void) {
     }
     
     /* Check RTC wakeup/alarm flags */
-    if (__HAL_RTC_ALARM_GET_FLAG(&hrtc, RTC_FLAG_ALRAF) != RESET) {
+    if ((RTC->ISR & (RTC_ISR_ALRAF | RTC_ISR_ALRBF)) != 0U) {
         sources |= WAKEUP_SOURCE_RTC;
     }
     
@@ -235,27 +239,21 @@ uint32_t LOW_POWER_GetWakeupSource(void) {
  */
 void LOW_POWER_ClearWakeupFlags(void) {
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
-    __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRAF);
-    __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRBF);
+    RTC->WPR = 0xCAU;
+    RTC->WPR = 0x53U;
+    RTC->ISR &= ~(RTC_ISR_ALRAF | RTC_ISR_ALRBF);
+    RTC->WPR = 0xFFU;
+    EXTI->PR = EXTI_PR_PR17;
 }
 
 /**
  * @brief  Configure wakeup pin (PA0 - WKUP)
  */
 void LOW_POWER_ConfigWakeupPin(void) {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-    
-    /* Enable GPIOA clock */
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    
-    /* Configure PA0 as wakeup input */
-    GPIO_InitStruct.Pin = GPIO_PIN_0;
-    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-    
-    /* Configure EXTI for touch IRQ (PC5) */
-    /* Already configured in MX_GPIO_Init */
+    /*
+     * Touch EXTI is configured in MX_GPIO_Init and RTC alarm EXTI is configured
+     * by RTC_Init. PA0 is an ADC input, so no wakeup GPIO is configured here.
+     */
 }
 
 /**

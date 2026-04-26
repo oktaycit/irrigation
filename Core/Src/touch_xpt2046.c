@@ -217,7 +217,7 @@ void TOUCH_SaveCalibration(void) {
 }
 
 void TOUCH_IRQHandler_Callback(void) {
-  /* Hook reserved for future interrupt-driven touch wake-up handling. */
+  LOW_POWER_UpdateActivity();
 }
 
 void TOUCH_EnableIT(void) {

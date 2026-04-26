@@ -245,6 +245,8 @@ Röle COM → Güç Kaynağı
 | PB3 | U3 Flash CLK | AF5 | SPI1_SCK |
 | PB4 | U3 Flash DO | AF5 | SPI1_MISO |
 | PB5 | U3 Flash DI | AF5 | SPI1_MOSI |
+| PB6 | Dozaj Asit PWM | AF_PP | AF2 / TIM4_CH1 |
+| PB7 | Dozaj Gubre A PWM | AF_PP | AF2 / TIM4_CH2 |
 | PB8 | I2C1_SCL | AF_OD | AF4 |
 | PB9 | I2C1_SDA | AF_OD | AF4 |
 | PB10 | Touch CS | Output PP | - |
@@ -299,7 +301,34 @@ Röle COM → Güç Kaynağı
 | TIM1 | CH1 | LCD Backlight PWM | 16-bit, 42MHz |
 | TIM2 | CH1 | Buzzer PWM | 32-bit, 42MHz |
 | TIM3 | - | Sistem Zamanlaması | 1ms tick |
-| TIM4 | - | Yedek | - |
+| TIM4 | CH1-CH2 | Dozaj PWM | PB6 Asit, PB7 Gubre A, 25Hz |
+
+---
+
+## 4.1 Sensor Genisleme Icin Onerilen Pinler
+
+Bu bolum, dinamik ihtiyac modelini besleyecek ek sensorler icin tavsiye edilen baglantilari tanimlar. Oneriler, mevcut pin kullanimiyla cakismamasi hedeflenerek hazirlanmistir.
+
+| Sensor | Onerilen Pin | Arabirim | Durum | Not |
+|--------|--------------|----------|-------|-----|
+| Isik sensoru (`BH1750` / `VEML7700`) | `PB8`, `PB9` | I2C1 | Paylasimli | EEPROM ile ayni hat |
+| Debi sensoru | `PB13` | GPIO/EXTI veya timer capture | Ayrilacak | Pulse sayimi icin uygun |
+| Dusuk su seviyesi | `PB14` | GPIO input | Ayrilacak | `NC` fail-safe tavsiye edilir |
+| Drenaj sensoru | `PB15` | GPIO input | Opsiyonel | 2. dijital input olarak kullanilabilir |
+| Hat basinc sensoru | `PC5` | ADC | Ayrilacak | `0.5-4.5V` ise bolucu/sartlandirma gerekir |
+| Toprak nem sensoru | `PC5` veya harici ADC | ADC / dijital | Opsiyonel | Kapasitif tip tercih edilmeli |
+
+Pin secim mantigi:
+
+- `PB13`, `PB14`, `PB15` dokunmatik, UART, vana ve EEPROM hatlariyla cakismadan iki veya uc saha dijital girisi ayirmayi saglar.
+- `PC5`, mevcut analog hatlardan bagimsiz ek bir analog kanal olarak basinç veya nem olcumu icin uygundur.
+- I2C sensorler icin yeni bus acmak yerine mevcut `I2C1` hatti kullanilabilir.
+
+Donanim notlari:
+
+- Tum saha dijital girislerine `TVS`, `RC filtre` ve `optik izolasyon` veya en azindan `seri direnc + pull-up/pull-down` dusunulmelidir.
+- Debi sensoru uzun kabloyla gelecekse `Schmitt trigger` veya opto kat tercih edilmelidir.
+- Basinç sensoru 5V beslemeli ise cikis 3.3V ADC uyumlu hale getirilmelidir.
 
 ---
 
@@ -310,6 +339,11 @@ Röle COM → Güç Kaynağı
 | DMA2 Stream0 | 0 | ADC1 | Peripheral→Memory |
 | DMA2 Stream3 | 3 | SPI1 TX | Memory→Peripheral |
 | DMA2 Stream4 | 4 | SPI1 RX | Peripheral→Memory |
+
+Not:
+
+- Isik sensuru I2C uzerinden calisacagi icin ek DMA zorunlu degildir.
+- Basinç veya analog nem sensuru eklenirse `ADC DMA buffer` boyutu mevcut `2` kanaldan daha yukari tasinmalidir.
 
 ---
 
