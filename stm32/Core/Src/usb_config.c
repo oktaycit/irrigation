@@ -6,9 +6,14 @@
  */
 
 #include "main.h"
+#include "fault_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define USB_CONFIG_PROTOCOL_VERSION 2U
+#define USB_CONFIG_FIRMWARE_VERSION "core-0.1"
+#define USB_CONFIG_DEVICE_NAME "irrigation-core"
 
 typedef struct {
   char line_buffer[USB_CONFIG_LINE_BUFFER_SIZE];
@@ -32,6 +37,10 @@ static uint8_t USB_CONFIG_ParseUInt32(const char *token, uint32_t *value);
 static uint8_t USB_CONFIG_ParseInt32(const char *token, int32_t *value);
 static uint8_t USB_CONFIG_IsHHMMValid(uint32_t hhmm);
 static uint8_t USB_CONFIG_ApplyProgramTokens(char **tokens, uint8_t token_count);
+static void USB_CONFIG_SendDeviceInfo(void);
+static void USB_CONFIG_SendTelemetrySnapshot(void);
+static void USB_CONFIG_SendFaultEvent(void);
+static void USB_CONFIG_SendRuntimeEvent(void);
 static void USB_CONFIG_SendHelp(void);
 static void USB_CONFIG_ExportAll(void);
 
@@ -122,7 +131,7 @@ static void USB_CONFIG_ProcessByte(uint8_t value) {
 }
 
 static void USB_CONFIG_HandleLine(char *line) {
-  char *tokens[16] = {0};
+  char *tokens[21] = {0};
   char *token = NULL;
   uint8_t token_count = 0U;
 
@@ -149,6 +158,26 @@ static void USB_CONFIG_HandleLine(char *line) {
 
   if (strcmp(tokens[0], "LIST") == 0) {
     USB_CONFIG_ExportAll();
+    return;
+  }
+
+  if (strcmp(tokens[0], "INFO") == 0) {
+    USB_CONFIG_SendDeviceInfo();
+    return;
+  }
+
+  if (strcmp(tokens[0], "TELEM") == 0) {
+    USB_CONFIG_SendTelemetrySnapshot();
+    return;
+  }
+
+  if (strcmp(tokens[0], "FAULT") == 0) {
+    USB_CONFIG_SendFaultEvent();
+    return;
+  }
+
+  if (strcmp(tokens[0], "RUNTIME") == 0) {
+    USB_CONFIG_SendRuntimeEvent();
     return;
   }
 
@@ -414,8 +443,89 @@ static uint8_t USB_CONFIG_ApplyProgramTokens(char **tokens, uint8_t token_count)
   return 1U;
 }
 
+static void USB_CONFIG_SendDeviceInfo(void) {
+  char response[USB_CONFIG_MAX_RESPONSE_SIZE] = {0};
+
+  (void)snprintf(response, sizeof(response),
+                 "OK,DEVICE,%s,%s,%u,%s,%u,%u,%u,%lu\r\n",
+                 USB_CONFIG_DEVICE_NAME, USB_CONFIG_FIRMWARE_VERSION,
+                 (unsigned int)USB_CONFIG_PROTOCOL_VERSION, "STM32F407VETx",
+                 (unsigned int)IRRIGATION_PROGRAM_COUNT,
+                 (unsigned int)PARCEL_VALVE_COUNT,
+                 (unsigned int)DOSING_VALVE_COUNT,
+                 (unsigned long)HAL_GetTick());
+  USB_CONFIG_SendText(response);
+}
+
+static void USB_CONFIG_SendTelemetrySnapshot(void) {
+  char response[USB_CONFIG_MAX_RESPONSE_SIZE] = {0};
+  int16_t ph_x100 = (int16_t)(IRRIGATION_CTRL_GetPH() * 100.0f);
+  int16_t ec_x100 = (int16_t)(IRRIGATION_CTRL_GetEC() * 100.0f);
+  fault_manager_status_t fault = {0};
+
+  FAULT_MGR_GetStatus(&fault);
+  (void)snprintf(response, sizeof(response),
+                 "OK,TELEMETRY,%lu,%u,%u,%u,%u,%u,%lu,%d,%d,%u,%u,%u,%u,%u\r\n",
+                 (unsigned long)HAL_GetTick(),
+                 (unsigned int)IRRIGATION_CTRL_GetState(),
+                 (unsigned int)IRRIGATION_CTRL_GetProgramState(),
+                 (unsigned int)IRRIGATION_CTRL_IsRunning(),
+                 (unsigned int)IRRIGATION_CTRL_GetActiveProgram(),
+                 (unsigned int)IRRIGATION_CTRL_GetCurrentParcelId(),
+                 (unsigned long)IRRIGATION_CTRL_GetRemainingTime(),
+                 (int)ph_x100, (int)ec_x100,
+                 (unsigned int)PH_GetStatus(),
+                 (unsigned int)EC_GetStatus(),
+                 (unsigned int)VALVES_GetActiveMask(),
+                 (unsigned int)IRRIGATION_CTRL_GetLastError(),
+                 (unsigned int)fault.active);
+  USB_CONFIG_SendText(response);
+}
+
+static void USB_CONFIG_SendFaultEvent(void) {
+  char response[USB_CONFIG_MAX_RESPONSE_SIZE] = {0};
+  fault_manager_status_t fault = {0};
+
+  FAULT_MGR_GetStatus(&fault);
+  (void)snprintf(response, sizeof(response),
+                 "OK,FAULT,%u,%u,%u,%u,%u,%u,%u,%s\r\n",
+                 (unsigned int)fault.active,
+                 (unsigned int)fault.latched,
+                 (unsigned int)fault.manual_ack_required,
+                 (unsigned int)fault.acknowledged,
+                 (unsigned int)fault.last_error,
+                 (unsigned int)fault.valve_error_mask,
+                 (unsigned int)fault.recommended_state,
+                 fault.alarm_text);
+  USB_CONFIG_SendText(response);
+}
+
+static void USB_CONFIG_SendRuntimeEvent(void) {
+  char response[USB_CONFIG_MAX_RESPONSE_SIZE] = {0};
+  irrigation_runtime_backup_t backup = {0};
+
+  IRRIGATION_CTRL_GetRuntimeBackup(&backup);
+  (void)snprintf(response, sizeof(response),
+                 "OK,RUNTIME,%u,%u,%u,%u,%u,%u,%u,%d,%d,%u\r\n",
+                 (unsigned int)backup.valid,
+                 (unsigned int)backup.active_program_id,
+                 (unsigned int)backup.active_valve_index,
+                 (unsigned int)backup.repeat_index,
+                 (unsigned int)backup.program_state,
+                 (unsigned int)backup.active_valve_id,
+                 (unsigned int)backup.remaining_sec,
+                 (int)backup.ec_target_x100,
+                 (int)backup.ph_target_x100,
+                 (unsigned int)backup.error_code);
+  USB_CONFIG_SendText(response);
+}
+
 static void USB_CONFIG_SendHelp(void) {
   USB_CONFIG_SendText("OK,HELP,PING\r\n");
+  USB_CONFIG_SendText("OK,HELP,INFO\r\n");
+  USB_CONFIG_SendText("OK,HELP,TELEM\r\n");
+  USB_CONFIG_SendText("OK,HELP,FAULT\r\n");
+  USB_CONFIG_SendText("OK,HELP,RUNTIME\r\n");
   USB_CONFIG_SendText("OK,HELP,LIST\r\n");
   USB_CONFIG_SendText("OK,HELP,GET,<id>\r\n");
   USB_CONFIG_SendText(

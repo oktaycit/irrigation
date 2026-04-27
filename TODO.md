@@ -17,6 +17,9 @@ Yol haritasi ve segment kararlari icin:
 - [Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md](Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md)
 - [Docs/16_Core_Kapanis_Checklist.md](Docs/16_Core_Kapanis_Checklist.md)
 - [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)
+- [Docs/18_BananaPi_Baglanti_Notlari.md](Docs/18_BananaPi_Baglanti_Notlari.md)
+- [Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md](Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md)
+- [Docs/20_Sera_Iklimlendirme_Plani.md](Docs/20_Sera_Iklimlendirme_Plani.md)
 
 ## Simdiki Sprint
 
@@ -48,10 +51,32 @@ Yol haritasi ve segment kararlari icin:
 
 ### 2026-04-26 - Insight Linux Edge Yon Degisikligi
 - [x] `Insight` surum icin Raspbian/Raspberry Pi OS tarzi Linux edge arayuz kararini dokumante et
-- [ ] STM32 `device_info`, `telemetry_snapshot`, `fault_event` ve `runtime_event` paketlerini tanimla
-- [ ] USB CDC servis protokolunu gateway okuyabilecek sekilde genislet
+- [x] STM32 `device_info`, `telemetry_snapshot`, `fault_event` ve `runtime_event` paketlerini tanimla
+- [x] USB CDC servis protokolunu gateway okuyabilecek sekilde genislet
 - [ ] `gateway/` altinda device-agent + yerel API + SQLite store iskeletini baslat
 - [ ] `gateway/ui` altinda canli dashboard prototipini hazirla
+
+### 2026-04-27 - Internet Tarimsal Veri ve Kamera Destekli Insight
+- [x] Ek sensor zorunlulugu olmadan konum, hava, urun donemi ve kamera destekli sulama karar mimarisini dokumante et
+- [ ] Gateway `site_profile` ve `parcel_profile` veri modelini tasarla
+- [ ] Hava/tarimsal veri provider adapter iskeletini ekle
+- [ ] ET0, radyasyon, yagis ve sicaklik context verilerini SQLite store'a yaz
+- [ ] Urun tipi ve donem tablosunu parsel recetelerine bagla
+- [ ] `irrigation_advice` tavsiye modelini operator onayli akisla tasarla
+- [ ] Kamera modulu icin `camera_observation` pipeline taslagini hazirla
+- [ ] Context overlay ile sulama programi guncelleme limitlerini tanimla
+
+### 2026-04-27 - Insight Sera Iklimlendirme
+- [x] SCD41, DS18B20/1-Wire, PCF ve Modbus tabanli sera iklimlendirme planini dokumante et
+- [ ] Gateway `climate-engine` servis veri modelini tasarla
+- [ ] SCD41 I2C okuma adapter iskeletini ekle
+- [ ] DS18B20/1-Wire sicaklik adapter iskeletini ekle
+- [ ] VPD, dew point, CO2 durum sinifi ve iklim stres skorunu hesapla
+- [ ] PCF8574/PCF8575 tabanli role/input genisleme modelini tanimla
+- [ ] Modbus/RS485 iklim sensor/role modul adresleme modelini tasarla
+- [ ] RS485/Modbus ultrasonik ruzgar hiz/yon sensoru adapter modelini ekle
+- [ ] Iklim cikislarini vana/dozaj cikislarindan ayri `climate_actuator` sinifi olarak planla
+- [ ] Fan, sisleme, golgeleme, isitma ve havalandirma interlock kurallarini tanimla
 
 ## Oncelik Sirasi
 
@@ -70,7 +95,7 @@ Yol haritasi ve segment kararlari icin:
 - [x] EEPROM kaliciligini saglamlastir
 - [ ] Hata yonetimi ve guvenli kapanis akislarini tamamla
 - [ ] Sensor hata senaryolarini test et
-- [ ] USB CDC `PING` cevapsizligini hedef USB/protokol tarafinda incele
+- [x] USB CDC `PING` cevapsizligini hedef USB/protokol tarafinda incele
 - [ ] Touch kalibrasyonunu EEPROM ile yukle/kaydet akisi ile tamamla
 - [ ] Program veri modelini statik saat alanlarindan `trigger_mode` ve flush parametrelerine dogru evrilt
 - [ ] Program/ayar veri modeline kanal kapasitesi, dozlama orani ve nominal ana hat debisi alanlarini ekle
@@ -85,6 +110,8 @@ Yol haritasi ve segment kararlari icin:
 - [ ] LDR veya astronomik saat tabanli `light bucket` prototipini ekle
 - [ ] Hedef hacim icin yazilimsal litre sayaci ve debi kalibrasyonunu ekle
 - [ ] `Insight` segment icin Linux edge sensor zengin dashboard ve tani alanlarini tasarla
+- [ ] `Insight` segment icin internet tarimsal veri ve kamera destekli context dashboardunu tasarla
+- [ ] `Insight` segment icin sera iklim dashboardu ve climate-engine tasarimini baslat
 
 ## Cikis Kriterleri
 

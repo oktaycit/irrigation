@@ -10,6 +10,8 @@ Temel urun karari:
 
 - Basit mod kullaniciyi saat ve dakika detayina bogmaz.
 - Pro mod, isik ve sensor verisinden faydalanarak sulamayi erteler veya siklastirir.
+- `Insight` modu, ek sensor zorunlulugu olmadan konum bazli hava/tarimsal internet verisini sanal sensor gibi kullanir.
+- Kamera modulleri bitki ve zemin gozlemini karar gerekcesine ekler.
 - Tum modlar ayni saha kontrol cekirdegi icinde calisir.
 - Sulama akisi her zaman ayni fiziksel fazlara bolunur: `pre-flush`, `dosing`, `post-flush`.
 - Bu mimari iki urun seviyesine haritalanir: `Core` ve `Insight`.
@@ -79,29 +81,53 @@ Bu yaklasim su faydalari saglar:
 - Gubreleme recetesi zaman kaymasindan daha az etkilenir.
 - Post-flush suresi ayrik tutulabildigi icin damlatici temizligi korunur.
 
-### 2.3 Seviye 3: Evapotranspirasyon / Isik Birikimi
+### 2.3 Seviye 3: Internet Context / ET0 / Isik Birikimi
 
-Gercek inovasyon katmani, anlik isik siddetini bir "enerji kovasi" icinde biriktirerek sulama karari vermektir.
+Gercek inovasyon katmani, ek sensor zorunlulugu olmadan konum bazli hava ve tarimsal veriyi bir "sanal iklim sensori" gibi kullanarak sulama karari vermektir. Fiziksel isik sensori daha sonra ayni modele daha dogru lokal veri saglar.
 
 Onerilen model:
 
-- Sensor girdi kaynagi: LDR, daha iyi bir PAR/isik sensoru veya yazilimsal radyasyon tahmini
+- Girdi kaynagi: hava tahmini, gerceklesen hava, global radyasyon, ET0, yagis, sicaklik, nem, ruzgar
+- Opsiyonel lokal sensor: LDR, PAR/isik sensoru, debi, basinç, drenaj veya toprak nemi
 - Runtime birikim alani: `light_integral_bucket`
+- Context alanlari: `weather_et0_x100`, `radiation_wh_m2`, `rain_probability_pct`, `context_age_min`
 - Esik parametresi: `bucket_threshold`
 - Kullanici parametresi: `sensitivity`
 
 Karar mantigi:
 
-1. Isik siddeti periyodik olculur.
-2. Deger zamanla carpilip kovaya eklenir.
-3. Kova esigi asarsa bir sulama turu tetiklenir.
-4. Sulama yapildiginda kova tamamen veya kismen bosaltilir.
+1. Gateway konum bazli hava/tarimsal veriyi periyodik ceker.
+2. Radyasyon, ET0, sicaklik, nem ve yagis riski normalize edilir.
+3. Urun tipi ve donemi ile parsel hassasiyeti uygulanir.
+4. Sistem `koru`, `artir`, `azalt` veya `ertele` tavsiyesi uretir.
+5. Operator onayi veya guvenli feature flag olmadan kritik program degismez.
+6. Sulama yapildiginda bucket veya gunluk ihtiyac bakiyesi guncellenir.
 
 Beklenen davranis:
 
 - Bulutlu havada sulama kendiliginden seyreklesir.
 - Gunesli havada daha sik sulama olur.
+- Yagis riski varsa acik alan programi ertelenebilir veya azaltma onerisi alir.
+- Sera modunda yagis dogrudan azaltma sebebi olmaz; radyasyon, sicaklik ve nem daha yuksek agirlik alir.
 - Kullanici "daha sık" yerine yalnizca hassasiyet ayariyla sistemi yonetir.
+
+### 2.4 Seviye 4: Kamera Destekli Gozlem
+
+Kamera, ilk fazda dogrudan kontrol emri uretmez. Hava ve urun donemi tavsiyesinin sahadaki goruntuyle tutarliligini artirir.
+
+Ilk kamera siniflari:
+
+- kamera sagligi ve goruntu var/yok
+- bitki kaplama veya yesillik orani
+- zemin islak/kuru gorunum sinifi
+- solgunluk/stres icin basit risk skoru
+- belirgin akinti veya damlatma anomalisi uyarisi
+
+Kamera sonucunun etkisi:
+
+- hava verisi "azalt" derken zemin cok kuru gorunuyorsa tavsiye "koru"ya cekilebilir
+- hava verisi "artir" derken zemin islak gorunuyorsa operator uyarisi uretilir
+- kamera kalitesi dusukse karar motoru bunu guven skoru dususu olarak isaretler
 
 ## 3. Ortak Sulama Fazlari
 
@@ -181,12 +207,18 @@ Bir sonraki iterasyonda program modeli asagidaki alanlara evrilmelidir:
 - `nominal_flow_lpm_x10`
 - `light_bucket_threshold`
 - `sensitivity_level`
+- `site_profile_id`
+- `parcel_profile_id`
+- `crop_profile_id`
+- `crop_stage_id`
+- `context_policy`
+- `max_context_adjust_pct`
 - `pre_flush_sec`
 - `post_flush_sec`
 - `sensor_gate_mask`
 - `recipe_profile_id`
 
-Boylece ayni parsel icin farkli urun tipleri veya mevsimlere gore farkli receteler tanimlanabilir.
+Boylece ayni parsel icin farkli urun tipleri, urun donemleri, mevsimler ve konum bazli hava kosullarina gore farkli receteler tanimlanabilir.
 
 ## 6. Multi-Zone Sonucu
 
@@ -211,6 +243,9 @@ Bunun pratik anlami:
 ### Pro Mod
 
 - Isik birikimi tabanli tetikleme
+- Internet hava/tarimsal context ile ET0/radyasyon/yagis tabanli tavsiye
+- Urun donemi ve parsel profiline gore program overlay'i
+- Kamera gozlemi ile tavsiye guven skoru
 - Sensor gate kullanimi
 - Parsel bazli recete
 - Pre-flush ve post-flush ince ayari
@@ -231,9 +266,9 @@ Bu seviyede hedef "en akilli cihaz" olmak degil, "en az ayarla guvenilir verim" 
 
 - Hedef: isletme mantigiyla calisan profesyonel tarim kuruluslari
 - Arayuz: daha fazla tanilama ve recete esnekligi
-- Tetikleme: isik birikimi, hacim, sensor gate
+- Tetikleme: internet context, urun donemi, isik birikimi, hacim, sensor gate
 - Bitiş: gercek litre, basinç dogrulama, drenaj geri bildirimi
-- Sensorler: `isik + debi + dusuk su seviyesi + hat basinç`, opsiyonel drenaj ve nem
+- Sensorler: ek sensor zorunlu degil; `isik + debi + dusuk su seviyesi + hat basinç` saha kalitesini artirir, kamera opsiyonel/fark yaratan paket olur
 
 Bu seviyede hedef, yalniz sulama kontrolu degil; operasyonel kararlari destekleyen veri katmani da sunmaktir.
 
@@ -244,15 +279,21 @@ Asagidaki sirayla ilerlemek riskleri dusurur:
 1. `pre-flush`, `dosing`, `post-flush` fazlarini mevcut scheduler akisina ekle
 2. Program modeline `trigger_mode` ve flush alanlarini ekle
 3. Sure tabanli bitis kriterine ek olarak `hedef hacim` secenegi ekle
-4. LDR/astronomik saat katmanini `dynamic trigger engine` olarak ayir
-5. Dijital inputlardan biriyle `sensor gate` ve inhibit mantigini ekle
-6. GUI'de `Basit Mod` ve `Pro Mod` ayrimini sun
+4. Gateway tarafinda internet context modelini ve provider adapter'larini ekle
+5. LDR/astronomik saat katmanini `dynamic trigger engine` olarak ayir
+6. Dijital inputlardan biriyle `sensor gate` ve inhibit mantigini ekle
+7. GUI'de `Basit Mod`, `Pro Mod` ve `Insight Tavsiye` ayrimini sun
 
 Ek segmentleme adimi:
 
-7. `Core` ve `Insight` ozellik setlerini feature flag ile ayir
-8. Program modelinde sensor bagimliligini opsiyonel hale getir
+8. `Core` ve `Insight` ozellik setlerini feature flag ile ayir
+9. Program modelinde sensor bagimliligini opsiyonel hale getir
+10. Kamera gozlemlerini tavsiye motoruna bagla
 
 ## 10. Tasarim Ilkesi
 
 Kullanici arayuzunde detay azaltilmali, firmware tarafinda ise karar sistemi zenginlestirilmelidir. Urun degeri, kullanicinin daha fazla saat girmesinde degil, daha az parametreyle daha dogru sulama yapabilmesinde ortaya cikar.
+
+Internet context ve kamera plani icin:
+
+- [Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md](Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md)

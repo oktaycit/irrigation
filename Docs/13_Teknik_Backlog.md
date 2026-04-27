@@ -84,6 +84,15 @@ Bu grup, `Insight` surumunu Raspbian/Raspberry Pi OS tarzi arayuz uzerinden urun
 | GW-06 | Chromium kiosk modu ve servis autostart paketini tasarla | Insight | P1 | Cihaz ustu ekran deneyimi icin gerekli |
 | GW-07 | Rol/izin ve audit log altyapisini ekle | Insight | P1 | Manuel komut ve servis akislari icin emniyet |
 | GW-08 | Cloud sync worker icin disk kuyrugu ve MQTT/HTTPS taslagini hazirla | Insight | P2 | Uzak izleme ve filo yonetimine gecis |
+| GW-09 | `site_profile` ve `parcel_profile` veri modelini SQLite store'a ekle | Insight | P0 | Konum, urun ve parsel context'i olmadan akilli tavsiye uretilemez |
+| GW-10 | Hava/tarimsal veri provider adapter iskeletini ekle | Insight | P0 | Ek sensor zorunlulugu olmadan ET0/radyasyon/yagis context'i saglar |
+| GW-11 | `irrigation_advice` ve operator onayli `context_overlay` akisini tasarla | Insight | P1 | Internet verisi programi guvenli sinirlar icinde etkileyebilir |
+| GW-12 | Kamera `camera_observation` pipeline taslagini hazirla | Insight | P1 | Kamera modulleri bitki/zemin gozlemini karar gerekcesine baglar |
+| GW-13 | `climate-engine` servis veri modelini ekle | Insight sera | P0 | Sera iklimlendirme sulama context'iyle ayni gateway'de yonetilir |
+| GW-14 | SCD41 I2C ve DS18B20/1-Wire sensor adapter'larini ekle | Insight sera | P0 | Iklim izleme icin ic sicaklik/nem/CO2 ve yardimci sicaklik verisi gerekir |
+| GW-15 | PCF8574/PCF8575 tabanli pano ici role/input genisleme modelini ekle | Insight sera | P1 | Fan, sisleme, golgeleme ve isitma role cikislari icin dusuk pin maliyeti |
+| GW-16 | Modbus/RS485 iklim sensor/role modul adresleme modelini tasarla | Insight sera | P1 | Uzun kablo ve dagitik sera panolari icin daha dayanikli yol |
+| GW-17 | RS485/Modbus ultrasonik ruzgar hiz/yon sensoru adapter'ini ekle | Insight sera | P1 | Havalandirma, perde, sisleme ve firtina emniyeti icin dis ortam ruzgar verisi gerekir |
 
 ## 5. Ticari Fark Yaratan Isler
 
@@ -103,6 +112,8 @@ Bu grup, teknik olarak da degerli ama asil etkisi urunun konumlanmasinda gorulen
 | CV-09 | Linux edge operator ve servis dashboardu | Insight | P0 | Insight'i ayirt eden ana arayuz deneyimi |
 | CV-12 | Mobil operator ve servis uygulamasi | Insight, premium Core | P2 | Linux edge API olgunlastiktan sonra saha erisimini genisletir |
 | CV-10 | AI destekli alarm ozetleme ve operasyon tavsiyeleri | Insight | P2 | "Akilli operasyon" deger onermesini guclendirir |
+| CV-13 | Konum, hava, urun donemi ve kamera destekli sulama asistani | Insight | P1 | Ek sensor zorunlulugu olmadan fark yaratan akilli sulama vaadi |
+| CV-14 | Sera iklim asistani ve iklim kontrol paketi | Insight sera | P1 | Sulama + fertigation + iklimlendirme tek platform degerini buyutur |
 
 ## 6. Sonraki Sprint Onerisi
 
@@ -141,10 +152,12 @@ Beklenen sonuc:
 - GW-01 device-agent iskeletini baslat
 - GW-02 USB CDC telemetry okuyucu ekle
 - GW-03 SQLite event/telemetry store ekle
+- GW-09 site/parsel context veri modelini ekle
+- GW-13 climate-engine veri modelini ekle
 
 Beklenen sonuc:
 
-- `Insight` Linux edge arayuzunun firmware ile konusabilecegi ilk omurga acilir.
+- `Insight` Linux edge arayuzunun firmware ile konusabilecegi, konum/parsel context'i ve sera iklim veri modelini tutabilecegi ilk omurga acilir.
 
 ### Sprint 4
 
@@ -152,13 +165,18 @@ Beklenen sonuc:
 - GW-05 canli dashboard prototipi
 - GW-06 kiosk modu ve autostart tasarimi
 - HW-02 debi sensoru entegrasyonu tasarimi
+- GW-10 hava/tarimsal veri provider adapter iskeleti
+- GW-11 operator onayli `irrigation_advice` ve `context_overlay`
+- GW-14 SCD41 ve DS18B20 sensor adapter iskeleti
 - FW-10 program modelinin evrilmesi
 - CV-03 learned-flow mantigi
 - CV-04 hacim bazli bitis
+- CV-13 konum/hava/urun donemi destekli sulama asistani
+- CV-14 sera iklim asistani
 
 Beklenen sonuc:
 
-- `Insight` sahada Linux edge dashboard ile gorunur hale gelir; sensor zenginlestirme ayni arayuze baglanir.
+- `Insight` sahada Linux edge dashboard ile gorunur hale gelir; sensor zenginlestirme, internet context'i ve sera iklim izleme ayni arayuze baglanir.
 
 ### Sprint 5
 
@@ -167,10 +185,14 @@ Beklenen sonuc:
 - GW-08 cloud sync taslagi
 - CV-12 mobil uygulama MVP
 - CV-10 AI advisory katmani icin veri modeli
+- GW-12 kamera observation pipeline taslagi
+- GW-15 PCF tabanli role/input genisleme
+- GW-16 Modbus/RS485 iklim modul adresleme
+- GW-17 ruzgar hiz/yon sensor adapter'i
 
 Beklenen sonuc:
 
-- Cihaz, internet ve mobil ile baglanan ama saha emniyetini koruyan bir operasyon platformuna donusmeye baslar.
+- Cihaz, internet, kamera, iklim sensorleri, iklim cikislari ve mobil ile baglanan ama saha emniyetini koruyan bir operasyon platformuna donusmeye baslar.
 
 ## 7. Teknik Bagimlilik Zinciri
 
@@ -180,6 +202,8 @@ Bazi backlog kalemleri birbirine baglidir:
 - debi sensoru olmadan gercek hacim bitisi eksik kalir
 - telemetry/event protokolu sabitlenmeden Linux edge arayuz saglamlasamaz
 - gateway store/API olmadan mobil, bulut ve AI katmanlari temiz acilamaz
+- site/parsel context olmadan hava, urun donemi ve kamera gozlemleri sulama kararina guvenli baglanamaz
+- climate-engine olmadan fan/sisleme/golgeleme/isitma cikislari sulama/fertigation emniyetinden temiz ayrilamaz
 - kurulum sihirbazi olmadan `Core` segmentinde kullanim kolayligi iddiasi zayif kalir
 
 Bu nedenle teknik sira su omurga ile korunmalidir:
@@ -188,9 +212,11 @@ Bu nedenle teknik sira su omurga ile korunmalidir:
 2. Sade kullanim
 3. STM32 telemetry/event protokolu
 4. Linux edge gateway ve yerel dashboard
-5. Akis/dogrulama sensorleri
-6. Recete ve optimizasyon
-7. Cloud, mobil ve AI katmani
+5. Konum, hava/tarimsal veri, urun donemi ve parsel context'i
+6. Sera iklim izleme ve climate-engine
+7. Akis/dogrulama sensorleri, kamera gozlemleri ve iklim cikislari
+8. Recete, tavsiye ve optimizasyon
+9. Cloud, mobil ve AI katmani
 
 Baglanti mimarisi icin detay:
 
@@ -203,11 +229,13 @@ Bugun itibariyla en yuksek getirili ilk 5 is:
 1. `FW-15` gateway telemetry/event paketlerini standartlastirmek
 2. `FW-16` USB CDC servis protokolunu gateway icin genisletmek
 3. `GW-01` device-agent iskeletini baslatmak
-4. `GW-05` Linux edge canli dashboard prototipini cikarmak
-5. `HW-10` 4+1 Venturi/Z-bypass ticari mekanik hedefini tasarlamak
+4. `GW-09` site/parsel context veri modelini baslatmak
+5. `GW-13` climate-engine veri modelini baslatmak
 
-Bu besli, `Core` kontrol cekirdegini korurken `Insight` surumunu Raspbian tarzi arayuz uzerinden somut urune cevirir.
+Bu besli, `Core` kontrol cekirdegini korurken `Insight` surumunu Raspbian tarzi arayuz, internet/context ve sera iklim veri katmani uzerinden somut urune cevirir.
 
 Insight edge arayuz detayi:
 
 - [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)
+- [Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md](Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md)
+- [Docs/20_Sera_Iklimlendirme_Plani.md](Docs/20_Sera_Iklimlendirme_Plani.md)

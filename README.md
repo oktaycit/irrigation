@@ -101,28 +101,18 @@ irrigation/
 │   ├── 01_Sistem_Gereksinimleri.md
 │   ├── 02_Pin_Assignment.md
 │   └── 03_Donanim_Semasi.md
-├── Core/
-│   ├── Inc/                       # Header dosyaları
-│   │   ├── main.h
-│   │   ├── system_config.h
-│   │   ├── lcd_ili9341.h
-│   │   ├── touch_xpt2046.h
-│   │   ├── sensors.h
-│   │   ├── valves.h
-│   │   ├── gui.h
-│   │   ├── eeprom.h
-│   │   └── irrigation_control.h
-│   └── Src/                       # Kaynak dosyalar (oluşturulacak)
-│       ├── main.c
-│       ├── lcd_ili9341.c
-│       ├── touch_xpt2046.c
-│       ├── sensors.c
-│       ├── valves.c
-│       ├── gui.c
-│       ├── eeprom.c
-│       └── irrigation_control.c
-├── Drivers/                       # STM32 HAL/LL drivers (CubeMX)
-├── Middlewares/                   # Harici kütüphaneler
+├── gateway/                       # Linux edge gateway ve yerel dashboard
+│   ├── app.py
+│   └── static/
+├── stm32/                         # STM32 firmware projesi
+│   ├── Core/
+│   │   ├── Inc/                   # Header dosyaları
+│   │   └── Src/                   # Kaynak dosyalar
+│   ├── Drivers/                   # STM32 HAL/LL drivers (CubeMX)
+│   ├── Middlewares/               # USB middleware ve harici kutuphaneler
+│   ├── Makefile
+│   └── STM32F407VETX_FLASH.ld
+├── Makefile                       # Kökten STM32 build delegasyonu
 └── README.md
 ```
 
@@ -152,14 +142,17 @@ irrigation/
 
 ### 2. Oluşturulan Koda Entegrasyon
 
-STM32CubeMX ile oluşturulan projeye `Core/Inc/` klasöründeki header dosyalarını ekleyin.
+STM32CubeMX ile oluşturulan projeye `stm32/Core/Inc/` klasöründeki header dosyalarını ekleyin.
 
 ### 3. Derleme
 
 IDE'niz ile projeyi derleyin:
 ```bash
-# STM32CubeIDE CLI örneği
-stm32cubeide -application /path/to/project -build
+# Kök dizinden
+make -j4
+
+# veya firmware dizininden
+make -C stm32 -j4
 ```
 
 ### 4. Programlama
@@ -216,13 +209,15 @@ ANA EKRAN
 | [Docs/07_USB_Masaustu_Arayuzu.md](Docs/07_USB_Masaustu_Arayuzu.md) | USB uzerinden program okuma/yazma masaustu araci |
 | [Docs/08_Saha_Kontrol_MVP_Plani.md](Docs/08_Saha_Kontrol_MVP_Plani.md) | Parsel ve dozaj vanalari icin saha kontrol MVP kapsami ve refactor plani |
 | [Docs/09_Dinamik_Ihtiyac_Modeli.md](Docs/09_Dinamik_Ihtiyac_Modeli.md) | Statik saat yerine periyot, hacim ve gunes birikimi tabanli sulama mimarisi |
-| [Docs/10_Sensor_Genisleme_Plani.md](Docs/10_Sensor_Genisleme_Plani.md) | Dinamik ihtiyac modelini besleyen yeni sensorler, pin onerileri ve firmware etkileri |
+| [Docs/10_Sensor_Genisleme_Plani.md](Docs/10_Sensor_Genisleme_Plani.md) | Internet context, kamera ve fiziksel sensorlerle dinamik ihtiyac modelini besleme plani |
 | [Docs/11_Urun_Segmentasyonu.md](Docs/11_Urun_Segmentasyonu.md) | Kucuk ciftci ve kurumsal tarim segmentleri icin iki kademeli urun stratejisi |
 | [Docs/12_Urun_Yol_Haritasi.md](Docs/12_Urun_Yol_Haritasi.md) | `Core` ve `Insight` segmentlerini ayirmadan ilerleyen fazli urun yol haritasi |
 | [Docs/13_Teknik_Backlog.md](Docs/13_Teknik_Backlog.md) | Yol haritasini `hemen firmware`, `ek donanim ister`, `ticari fark yaratir` backlog'una ceviren teknik liste |
 | [Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md](Docs/15_Turkiye_Pazar_Projeksiyon_Karsilastirmasi.md) | Turkiye pazari kapasite varsayimlari ile mevcut urun hedeflerini karsilastiran hedef revizyonu |
 | [Docs/16_Core_Kapanis_Checklist.md](Docs/16_Core_Kapanis_Checklist.md) | Core firmware kapanis karari, son temiz build ozeti ve kalan saha kabul maddeleri |
 | [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md) | Insight surum icin Raspbian/Raspberry Pi OS tarzi Linux edge arayuz ve gateway plani |
+| [Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md](Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md) | Konum, hava, urun donemi ve kamera gozlemleriyle sensor zorunlulugu olmadan Insight context mimarisi |
+| [Docs/20_Sera_Iklimlendirme_Plani.md](Docs/20_Sera_Iklimlendirme_Plani.md) | Insight sera iklimlendirme icin SCD41, DS18B20, PCF/Modbus ve climate-engine plani |
 
 ---
 

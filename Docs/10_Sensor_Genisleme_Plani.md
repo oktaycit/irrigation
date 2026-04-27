@@ -4,9 +4,26 @@ Bu dokuman, urunun "dinamik ihtiyac" hedefine uygun ek sensorleri; donanim, pin 
 
 Bu plan varsayilan olarak `Insight` urun seviyesini hedefler. `Core` seviyede bu sensorlerin bir kismi opsiyonel veya yok kabul edilmelidir.
 
+2026-04-27 karar guncellemesi:
+
+- `Insight` ek fiziksel sensor zorunlulugu olmadan, once konum bazli internet hava/tarimsal verisini sanal sensor gibi kullanmalidir.
+- Fiziksel sensorler ve kamera modulleri karar kalitesini artiran ek kanit kaynaklari olarak fazlandirilmalidir.
+- Sera iklimlendirme icin SCD41 ana ic ortam sensoru, DS18B20/1-Wire yardimci sicaklik hattidir.
+- Ruzgar hiz/yon icin tercih RS485/Modbus ultrasonik ruzgar sensorudur.
+- Detayli context plani: [Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md](Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md)
+- Sera iklim plani: [Docs/20_Sera_Iklimlendirme_Plani.md](Docs/20_Sera_Iklimlendirme_Plani.md)
+
 ## 1. Tasarim Karari
 
-Ilk genisleme paketinde su dort sensor en yuksek degeri uretir:
+Ilk yazilim genisleme paketi, ek donanim takmadan su sanal sensor/context alanlarini kullanmalidir:
+
+1. Konum bazli hava tahmini ve gerceklesen hava
+2. Radyasyon / guneslenme / ET0
+3. Yagis riski ve don/uyari bilgisi
+4. Urun tipi, dikim tarihi ve donem bilgisi
+5. Sera ic iklimi icin SCD41 CO2/nem/sicaklik olcumu
+
+Fiziksel genisleme paketinde su dort sensor en yuksek degeri uretir:
 
 1. Isik sensoru
 2. Debi sensoru
@@ -15,6 +32,10 @@ Ilk genisleme paketinde su dort sensor en yuksek degeri uretir:
 
 Opsiyonel katman:
 
+- Kamera modulu
+- SCD41 veya Modbus CO2/nem/sicaklik sensoru
+- DS18B20/1-Wire sicaklik problari
+- RS485/Modbus ultrasonik ruzgar hiz/yon sensoru
 - Drenaj sensori
 - Toprak nem sensori
 
@@ -22,10 +43,15 @@ Opsiyonel katman:
 
 | Sensor | Oncelik | Neden |
 |--------|---------|------|
+| Internet hava/tarimsal context | P0 | Ek sensor olmadan ET0, radyasyon, yagis ve sicaklikla karar kalitesini artirir |
+| SCD41 CO2/nem/sicaklik | P0 | Sera ic iklimi, VPD ve havalandirma/golgeleme/sisleme kararlari icin ana sensor |
+| DS18B20 / 1-Wire sicaklik | P1 | Su deposu, besleme hatti, dis ortam veya yedek sicaklik noktasi |
+| Ultrasonik ruzgar hiz/yon | P1 | Havalandirma, perde, sisleme ve firtina emniyeti icin dis ortam girdisi |
 | Isik sensoru | P1 | `light bucket` ve mevsimsel kayma duzeltmesi |
 | Debi sensoru | P1 | Sulamayi sure yerine hacimle bitirmek |
 | Dusuk su seviyesi | P1 | Kuru calisma korumasi |
 | Hat basinc sensoru | P2 | Akis teyidi, tikali filtre, pompa arizasi ayirimi |
+| Kamera modulu | P2 | Bitki/zemin gozlemi ve tavsiye gerekcesi |
 | Drenaj sensoru | P3 | Geri bildirim ve inhibit |
 | Toprak nem sensoru | P3 | Yardimci karar / alarm |
 
@@ -33,10 +59,15 @@ Opsiyonel katman:
 
 | Sensor | `Core` | `Insight` |
 |--------|--------|-----------|
-| Isik | Opsiyonel | Zorunluya yakin |
+| Internet hava/tarimsal context | Yok veya premium | Zorunlu |
+| SCD41 CO2/nem/sicaklik | Yok veya premium | Zorunlu sera paketi |
+| DS18B20 / 1-Wire sicaklik | Opsiyonel | Onerilen |
+| Ultrasonik ruzgar hiz/yon | Yok veya premium | Onerilen sera paketi |
+| Isik | Opsiyonel | Onerilen |
 | Debi | Opsiyonel | Zorunluya yakin |
 | Dusuk su seviyesi | Zorunlu | Zorunlu |
 | Hat basinc | Yok veya opsiyonel | Onerilen |
+| Kamera | Yok | Opsiyonel/fark yaratan paket |
 | Drenaj | Yok | Opsiyonel |
 | Toprak nem | Opsiyonel | Opsiyonel |
 
@@ -44,6 +75,9 @@ Opsiyonel katman:
 
 | Islev | Onerilen tip | Arabirim |
 |------|----------------|----------|
+| Sera ic iklim | `SCD41` | I2C |
+| Yardimci sicaklik | `DS18B20` veya turevleri | 1-Wire |
+| Ruzgar hiz/yon | `RK120-07` sinifi ultrasonik veya Gill `WindSonic` | RS485/Modbus |
 | Isik | `BH1750` veya `VEML7700` | I2C |
 | Debi | Hall etkili pulse cikisli debimetre | Dijital pulse |
 | Dusuk su seviyesi | Samandira switch veya kuru kontak | Dijital input |
@@ -58,6 +92,9 @@ Bu oneriler, mevcut repodaki pin kullanimina gore cakisma en az olacak sekilde s
 | Sensor | MCU Pin | Arabirim | Firmware rolü |
 |--------|---------|----------|----------------|
 | Isik | `PB8/PB9` | I2C1 | `light_bucket`, gun dogumu ankraji, sensor sagligi |
+| SCD41 | `PB8/PB9` | I2C1 | CO2, nem, sicaklik, VPD ve iklim sensor sagligi |
+| DS18B20 | `PB12` | 1-Wire | su deposu, besleme hatti, dis ortam veya yedek sicaklik |
+| Ruzgar hiz/yon | Gateway USB-RS485 veya `PA9/PA10 + PB11` | Modbus RTU | dis ruzgar, firtina, havalandirma/perde emniyeti |
 | Debi | `PB13` | EXTI / counter | `delivered_volume_l`, akiş var teyidi |
 | Dusuk su seviyesi | `PB14` | Dijital input | `ERR_LOW_WATER_LEVEL`, start inhibit |
 | Drenaj | `PB15` | Dijital input | post-irrigation kontrol, yeni tur inhibit |
@@ -69,6 +106,9 @@ Varsayim:
 - `PB13`, `PB14`, `PB15` custom sulama kartinda saha inputlari icin ayrilabilir.
 - `PC5` custom kartta analog genisleme girisi olarak ayrilabilir.
 - I2C1 hatti uzerindeki toplam kapasitans saha kablolamasina gore gozden gecirilmelidir.
+- PCF8574/PCF8575 ayni I2C bus uzerinden pano ici role/input cogaltma icin kullanilabilir.
+- Modbus/RS485 uzun kablo, dagitik sera sensoru veya role modulu icin PCF'e gore daha dogru saha yoludur.
+- Ruzgar sensoru dis ortamda olacagi icin I2C/analog yerine RS485/Modbus tercih edilmelidir.
 
 ## 5. Sensorlere Gore Firmware Davranisi
 
@@ -178,6 +218,12 @@ Bu sensor paketi eklendiginde asagidaki isler acilmalidir:
 
 `Insight` icin en dengeli ilk saha paketi:
 
+- konum bazli internet hava/tarimsal context
+- urun donemi ve parsel profili
+- SCD41 ile ic CO2/nem/sicaklik
+- DS18B20 ile su deposu veya besleme hatti sicakligi
+- RS485/Modbus ultrasonik ruzgar hiz/yon sensoru
+- opsiyonel kamera modulu
 - `BH1750` veya `VEML7700`
 - pulse cikisli debi sensoru
 - samandira tip dusuk su seviyesi switch'i
@@ -188,4 +234,9 @@ Boylece urun:
 - saat bazli cihaz olmaktan cikar
 - litre bazli sulama yapabilir
 - gunesli ve bulutlu hava arasinda fark koyabilir
+- ek sensor yokken bile internet verisi ve urun donemiyle tavsiye uretebilir
+- SCD41 ile VPD, CO2 ve ic iklim durumunu hesaplayabilir
+- ruzgar verisiyle havalandirma, perde ve sisleme kararlarini daha emniyetli verir
+- PCF veya Modbus role cikislariyla fan, sisleme, golgeleme ve isitma kontrolune evrilebilir
+- kamera varsa bitki/zemin gozlemiyle tavsiyeyi guclendirebilir
 - saha arizalarini daha dogru ayristirabilir

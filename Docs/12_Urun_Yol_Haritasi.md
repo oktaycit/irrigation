@@ -114,6 +114,10 @@ Oncelikli ozellikler:
 - yerel REST API ve websocket olay akisi
 - SQLite tabanli yerel log ve telemetry kaydi
 - cihaz ustu web dashboard prototipi
+- konum profili, timezone ve internet veri kaynagi adapter iskeleti
+- hava/tarimsal context verisini yerelde kaydetme: sicaklik, yagis, radyasyon, ET0
+- parsel bazli urun tipi, dikim tarihi ve donem bilgisini tutma
+- sera modu icin SCD41 ve DS18B20 tabanli iklim izleme iskeleti
 - debi sensoru entegrasyonu
 - debimetre K-faktoru ve ana hat debisi kalibrasyonu
 - `target_volume_l` ve gercek/likide litre bazli bitis mantigi
@@ -141,6 +145,11 @@ Oncelikli ozellikler:
 
 - parsel bazli recete ve profil secimi
 - isik birikimi veya dinamik ihtiyac tetikleme
+- internetten gelen hava/tarimsal veriyle ek sensor gerektirmeden sulama tavsiyesi
+- urun donemi ve parsel profiline gore sulama programi overlay'i
+- kamera modulleri ile bitki/zemin gozlemi ve tavsiye gerekcesi
+- sera icin fan, sisleme, golgeleme, isitma ve havalandirma tavsiye/kontrol katmani
+- PCF tabanli pano ici role/input genisleme ve Modbus/RS485 tabanli dagitik iklim modul destegi
 - sensor gate / inhibit mantigi
 - basinç ve debi ile capraz dogrulama
 - Linux edge arayuzunde gelismis commissioning ekrani
@@ -198,10 +207,15 @@ Bagli mimari icin detay:
 | Z-bypass / 110 mm saha kurulum hedefi | Faz 1 | Zorunlu | Var |
 | Booster pompa cikisi | Faz 1 | Opsiyonel | Var |
 | Linux edge gateway / Raspbian arayuz | Faz 2 | Premium opsiyon | Zorunlu |
+| Internet tarimsal context | Faz 2-3 | Yok veya premium | Zorunlu |
+| Urun donemi ve parsel profili | Faz 2-3 | Sade profil | Zorunlu |
+| Sera iklim izleme: SCD41/DS18B20 | Faz 2-3 | Yok veya premium | Zorunlu sera paketi |
+| Sera iklim kontrol: fan/sisleme/golgeleme/isitma | Faz 3 | Yok | Opsiyonel/zorunlu sera paketi |
 | Debi sensoru | Faz 2 | Opsiyonel | Zorunluya yakin |
 | Hacim bazli bitis | Faz 2 | Opsiyonel | Zorunluya yakin |
 | Learned flow ve akis alarmi | Faz 2 | Opsiyonel | Var |
 | Parsel bazli recete | Faz 3 | Yok veya sade profil | Zorunlu |
+| Kamera destekli saha gozlemi | Faz 3 | Yok | Opsiyonel/zorunlu paket |
 | Dinamik ihtiyac / isik tetikleme | Faz 3 | Yok | Var |
 | Bakim zekasi | Faz 3 | Temel | Gelismis |
 | Uzak izleme | Faz 4 | Opsiyonel premium | Var |
@@ -215,9 +229,13 @@ Bu repo icin yakin vade uygulama sirasi su olmali:
 3. `Core` hidrolik hedefini 4+1 Venturi/Z-bypass ve 50-600 l/sa kanal kalibrasyonu olarak sabitle
 4. STM32 icin gateway'e uygun telemetry, event ve config protokolunu sabitle
 5. `gateway/` altinda Linux edge device-agent ve yerel dashboard prototipini baslat
-6. Debi sensorunu ortak platform genislemesi olarak tasarla
-7. Program modelini parsel bazli recete ve hacim bitisini tasiyacak sekilde evrilt
-8. `Insight` ozelliklerini Linux edge arayuz uzerinden ayri deger paketi olarak ac
+6. Konum, hava/tarimsal veri, urun donemi ve parsel profilini gateway store'a ekle
+7. SCD41, DS18B20 ve VPD hesapli sera iklim izleme planini prototiple
+8. Debi sensorunu ortak platform genislemesi olarak tasarla
+9. Program modelini parsel bazli recete, hacim bitisi ve context overlay'i tasiyacak sekilde evrilt
+10. Kamera gozlem pipeline'ini `Insight` feature flag'i arkasinda tasarla
+11. PCF/Modbus tabanli iklim cikis genislemesini tasarla
+12. `Insight` ozelliklerini Linux edge arayuz uzerinden ayri deger paketi olarak ac
 
 ## 6. Net Karar
 
@@ -232,3 +250,5 @@ Boylece urun hem erken satilabilir, hem de zamanla daha yuksek katma degerli bir
 Insight edge arayuz detayi:
 
 - [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)
+- [Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md](Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md)
+- [Docs/20_Sera_Iklimlendirme_Plani.md](Docs/20_Sera_Iklimlendirme_Plani.md)

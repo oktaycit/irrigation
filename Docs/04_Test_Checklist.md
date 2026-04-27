@@ -6,7 +6,7 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 
 - [x] Proje warning'siz derleniyor
 - [x] Uretilen `.elf` dosyasi olusuyor
-- [x] Linker script dogru hedefi kullaniyor (`STM32F407VETX_FLASH.ld`)
+- [x] Linker script dogru hedefi kullaniyor (`stm32/STM32F407VETX_FLASH.ld`)
 - [x] MCU'ya flash islemi hatasiz tamamlandi
 - [x] Kart yeniden baslatildiginda firmware aciliyor
 
@@ -139,5 +139,19 @@ Bu dokuman, kart uzerinde yapilacak temel dogrulama ve kabul testlerini takip et
 - Test eden: Codex + DAPLink
 - Kart revizyonu:
 - Sensor tipi:
-- Firmware build: `Debug/irrigation.elf`
-- Notlar: `make -j4` guncel; OpenOCD CMSIS-DAP SWD baglantisi kuruldu, `program Debug/irrigation.elf verify reset exit` basarili, reset sonrasi CPU Thread modda calisti. USB CDC `PING` komutu `/dev/cu.usbmodem11102`, `/dev/tty.usbmodem11102` ve `/dev/cu.debug-console` uzerinden cevap vermedi; USB uygulama protokolu ayri incelenmeli.
+- Firmware build: `stm32/Debug/irrigation.elf`
+- Notlar: `make -j4` guncel; OpenOCD CMSIS-DAP SWD baglantisi kuruldu, `program stm32/Debug/irrigation.elf verify reset exit` basarili, reset sonrasi CPU Thread modda calisti. USB CDC `PING` komutu `/dev/cu.usbmodem11102`, `/dev/tty.usbmodem11102` ve `/dev/cu.debug-console` uzerinden cevap vermedi; USB uygulama protokolu ayri incelenmeli.
+
+- Test tarihi: 2026-04-27
+- Test eden: Codex + Banana Pi `serapi`
+- Kart revizyonu:
+- Sensor tipi:
+- Firmware build: `stm32/Debug/irrigation.elf`
+- Notlar: Banana Pi uzerinden CMSIS-DAP OpenOCD 0.12.0 kuruldu ve `program /home/sera/irrigation.elf verify reset exit` basarili calisti. DAPLink mass-storage kopyalama `FAIL.TXT` icinde `The transfer timed out` verdigi icin SWD/OpenOCD yolu tercih edildi. Flash sonrasi Banana Pi USB hub'i yeniden enumerate edilince STM32 CDC `/dev/serial/by-id/usb-OktayCit_Irrigation_Controller_Config_Port_207E377C5232-if00` olarak geri geldi. Gateway `/health`, `/api/ping`, `/api/programs`, `/api/programs/1`, Program 8 `SET/GET`, flush alanlari ve gecersiz saat reddi dogrulandi. Program 1 test sirasinda gecici devre disi birakildi ve test sonunda eski etkin durumuna geri alindi.
+
+- Test tarihi: 2026-04-27
+- Test eden: Codex + Banana Pi `serapi`
+- Kart revizyonu:
+- Sensor tipi:
+- Firmware build: `stm32/Debug/irrigation.elf`
+- Notlar: Insight gateway protokol yuku Banana Pi uzerinden flash edildi ve OpenOCD verify/reset basarili tamamlandi. Gateway guncel `app.py` ile `0.0.0.0:8080` uzerinde yeniden baslatildi. `/api/device`, `/api/telemetry`, `/api/fault` ve `/api/runtime` endpointleri STM32 CDC uzerinden dogrulandi; ham cevaplar sirasiyla `OK,DEVICE`, `OK,TELEMETRY`, `OK,FAULT` ve `OK,RUNTIME` formatinda geldi. Program 1 flash/test sirasinda gecici devre disi birakildi ve test sonunda `enabled: 1` olarak eski degerleriyle dogrulandi.

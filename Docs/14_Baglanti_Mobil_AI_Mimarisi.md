@@ -8,6 +8,7 @@ Temel ilke:
 - `Raspberry Pi` benzeri cihaz, `Insight` icin ana Linux edge arayuz ve entegrasyon katmani olarak calisir.
 - mobil uygulama ve bulut servisleri, dogrudan role veya dozaj vanasina degil `gateway` uzerinden erisir.
 - `AI`, otomatik karar veren kontrol cekirdegi degil; once onerici, tani ve optimizasyon katmani olarak konumlanir.
+- konum, hava, tarimsal veri, urun donemi ve kamera gozlemleri gateway uzerinde bir context motorunda birlesir.
 
 Bu ayrim sayesinde internet veya mobil uygulama olmasa bile saha kontrolu calismaya devam eder.
 
@@ -55,6 +56,9 @@ Ana gorevleri:
 - yerel API saglamak
 - veriyi gecici olarak yerelde tamponlamak
 - internet varsa buluta senkronize etmek
+- internetten konum bazli hava/tarimsal veri cekmek ve ek sensor olmadan karar context'i uretmek
+- urun tipi, donem ve parsel profillerini sulama programlariyla iliskilendirmek
+- kamera modullerinden gelen gozlemleri tavsiye motoruna kanit olarak baglamak
 - mobil istemciye yerel ag veya internet uzerinden servis vermek
 - log, alarm, tanilama ve guncelleme akisini merkezilestirmek
 
@@ -68,6 +72,7 @@ Bu katmanin cihaz ustunde sunacagi servisler:
 - `Sync Worker`: bulut senkronizasyonu
 - `OTA/Update Worker`: gateway yazilimi ve firmware dagitimi
 - `Rule Engine`: internet olmadan calisabilecek basit kural motoru
+- `Context Engine`: konum, hava/tarimsal veri, urun donemi, kamera ve cihaz telemetry verisini birlestiren servis
 
 Arayuz tercihi:
 
@@ -142,8 +147,30 @@ Gateway tarafinda gerekli mesaj siniflari:
 - `manual_command`
 - `program_sync`
 - `firmware_info`
+- `context_snapshot`
+- `irrigation_advice`
+- `camera_observation`
 
-### 3.2 `Gateway <-> Cloud`
+### 3.2 Gateway <-> Internet Tarimsal Veri Kaynaklari
+
+Gateway, hava ve tarimsal context icin provider adapter modeli kullanmalidir.
+
+Ilk veri siniflari:
+
+- saatlik/gunluk sicaklik, nem, ruzgar ve yagis tahmini
+- global radyasyon veya guneslenme verisi
+- ET0 veya evapotranspirasyon icin hesaplanabilir alanlar
+- resmi tarimsal uyarilar ve don/yagis riski
+- tarihsel hava verisi ve saha performans karsilastirmasi
+
+Kurallar:
+
+- tek bir API'ye kilitlenme olmamali
+- internet yoksa son gecerli veri "stale" etiketiyle kullanilmali
+- veri kaynagi, zaman damgasi ve veri yasi her tavsiye ile kaydedilmeli
+- hava verisi tek basina kritik vana komutu uretmemeli; sadece program overlay veya operator tavsiyesi uretmeli
+
+### 3.3 `Gateway <-> Cloud`
 
 Onerilen protokoller:
 
@@ -156,7 +183,7 @@ Onerilen kurallar:
 - manuel kritik komutlar bulut onayi beklemeden yerelde islenebilir
 - buluttan gelen komutlar rol bazli yetki ve zaman damgasi ile dogrulanir
 
-### 3.3 `Mobile <-> Gateway/Cloud`
+### 3.4 `Mobile <-> Gateway/Cloud`
 
 Iki mod desteklenmelidir:
 
@@ -171,14 +198,17 @@ Normal isleyis:
 
 1. `STM32` anlik durum ve olaylari gateway'e yollar
 2. `Gateway` bu veriyi normalize eder ve tamponlar
-3. mobil uygulama yerel API veya bulut uzerinden durumu gorur
-4. internet varsa bulut tarihsel veri ve alarm dagitimi yapar
-5. `AI` katmani veri uzerinde cikarim yapar ve oneriler uretir
+3. `Context Engine` konum, hava/tarimsal veri, urun donemi ve kamera gozlemlerini gunceller
+4. `Rule/Advice Engine` sulama icin koru/artir/azalt/ertele onerisi veya limitli program overlay'i uretir
+5. mobil uygulama yerel API veya bulut uzerinden durumu gorur
+6. internet varsa bulut tarihsel veri ve alarm dagitimi yapar
+7. `AI` katmani veri uzerinde cikarim yapar ve oneriler uretir
 
 Kritik kontrol kurali:
 
 - vana acma/kapama, acil stop ve fault gibi hareketler her zaman `STM32` tarafinda son karar katmanindan gecmelidir
 - `AI` veya mobil arayuzun dogrudan "ham vana surme" yetkisi olmamalidir
+- hava, kamera veya urun donemi kaynakli oneriler STM32'nin guvenli program limitlerini asamaz
 
 ## 5. AI Katmanini Nereye Koymali?
 
@@ -188,6 +218,7 @@ Kritik kontrol kurali:
 - operatore sade dilde durum aciklama
 - anomali tespiti
 - sulama/periyot optimizasyonu icin tavsiye
+- konum, hava, ET0, urun donemi ve kamera gozlemlerinden sulama tavsiyesi
 - bakim tahmini
 - kalibrasyon sapmasi fark etme
 - tarihsel veri uzerinden "hangi parsel neden daha cok su istiyor?" analizi
@@ -202,6 +233,7 @@ Ilk guvenli AI kullanimlari:
 Ilk fazda AI'nin yapmamasi gerekenler:
 
 - dogrudan sulama programi yazmak
+- operator politikasi olmadan hava/kamera verisine dayanarak otomatik setpoint degistirmek
 - operator onayi olmadan kritik setpoint degistirmek
 - fault varken zorla sistemi yeniden baslatmak
 - sensor sagligini dogrulamadan otonom dozaj karari vermek
@@ -272,6 +304,26 @@ Basari olcutu:
 - internet olmadan ayni sahada telefondan cihaz durumu gorulebilmeli
 - cihaz uzerinde ekran varsa kiosk dashboard acilmali
 
+### Faz 3A - Internet Context ve Kamera Destekli Insight
+
+Hedef:
+
+- ek sensor zorunlulugu olmadan konum, hava, urun donemi ve kamera gozlemleriyle sulama karar kalitesini artirmak
+
+Teslimatlar:
+
+- gateway `site_profile` ve `parcel_profile`
+- hava/tarimsal veri provider adapter'lari
+- ET0/radyasyon/yagis context store
+- urun donemi ve parsel recete iliskisi
+- `irrigation_advice` tavsiye modeli
+- operator onayli `context_overlay`
+- kamera `camera_observation` pipeline taslagi
+
+Basari olcutu:
+
+- sistem internet verisini ve urun donemini kullanarak gerekceli sulama tavsiyesi uretebilmeli; operator onayi olmadan guvenli limit disina cikmamalidir
+
 ### Faz 4A - Internet ve Uzak Izleme
 
 Hedef:
@@ -326,6 +378,9 @@ Gateway tarafinda:
 - SQLite tabanli yerel telemetry/event store ekle
 - REST API ve websocket olay akisi ekle
 - internet kesintisi icin disk tabanli kuyruk ekle
+- konum/hava/tarimsal veri icin provider adapter iskeleti ekle
+- `site_profile`, `parcel_profile`, `weather_observation`, `camera_observation` ve `irrigation_advice` tablolarini tasarla
+- operator onayli program overlay akisini ekle
 - `gateway/ui` altinda Linux edge web dashboard baslat
 
 Mobil tarafinda:
@@ -338,6 +393,7 @@ Mobil tarafinda:
 AI tarafinda:
 
 - ilk veri seti olarak fault, pH, EC, aktif parsel, dozaj sureleri ve akis olaylarini topla
+- ikinci veri seti olarak konum, hava, ET0, radyasyon, yagis, urun donemi ve kamera gozlemlerini topla
 - AI ciktilarini `advice` ve `alert insight` siniflarina ayir
 - AI tavsiyelerini operator onayli akisa bagla
 
@@ -349,10 +405,12 @@ Bu urunde en saglikli sonraki adim su olmalidir:
 - `Raspberry Pi` = Linux edge arayuz, baglanti ve entegrasyon katmani
 - `Mobile` = operator/servis eslikci arayuzu
 - `Cloud` = filo, rapor ve uzaktan operasyon
-- `AI` = tani, ozetleme ve optimizasyon
+- `Context Engine` = konum, hava, urun donemi ve kamera gozlemleri
+- `AI` = tani, ozetleme, tavsiye ve optimizasyon
 
 Boylece urun, sahada calisan guvenilir cekirdegini korurken bagli ve akilli bir platforma evrilebilir.
 
 Insight Linux edge arayuz karari icin:
 
 - [Docs/17_Insight_Raspbian_Arayuz_Plani.md](Docs/17_Insight_Raspbian_Arayuz_Plani.md)
+- [Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md](Docs/19_Internet_Tarimsal_Veriler_ve_Kamera_Plani.md)

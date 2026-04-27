@@ -270,8 +270,8 @@ Mevcut yapida `irrigation_control.c` icinde program akisi, dozaj, runtime backup
 
 Hedef dosyalar:
 
-- `Core/Inc/valves.h`
-- `Core/Src/valves.c`
+- `stm32/Core/Inc/valves.h`
+- `stm32/Core/Src/valves.c`
 
 Isler:
 
@@ -288,8 +288,8 @@ Teslim:
 
 Yeni modul onerisi:
 
-- `Core/Inc/dosing_controller.h`
-- `Core/Src/dosing_controller.c`
+- `stm32/Core/Inc/dosing_controller.h`
+- `stm32/Core/Src/dosing_controller.c`
 
 Isler:
 
@@ -308,8 +308,8 @@ Teslim:
 
 Yeni modul onerisi:
 
-- `Core/Inc/parcel_scheduler.h`
-- `Core/Src/parcel_scheduler.c`
+- `stm32/Core/Inc/parcel_scheduler.h`
+- `stm32/Core/Src/parcel_scheduler.c`
 
 Isler:
 
@@ -329,8 +329,8 @@ Teslim:
 
 Yeni modul onerisi:
 
-- `Core/Inc/fault_manager.h`
-- `Core/Src/fault_manager.c`
+- `stm32/Core/Inc/fault_manager.h`
+- `stm32/Core/Src/fault_manager.c`
 
 Isler:
 
@@ -349,8 +349,8 @@ Teslim:
 
 Hedef dosyalar:
 
-- `Core/Inc/irrigation_control.h`
-- `Core/Src/irrigation_control.c`
+- `stm32/Core/Inc/irrigation_control.h`
+- `stm32/Core/Src/irrigation_control.c`
 
 Isler:
 

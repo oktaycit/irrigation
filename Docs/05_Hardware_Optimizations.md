@@ -307,7 +307,7 @@ if (touch_pressed) {
 ## 🛠️ Yeni Dosyalar
 
 ```
-Core/
+stm32/Core/
 ├── Inc/
 │   ├── buzzer.h          # Buzzer driver header
 │   ├── hw_crc.h          # Hardware CRC header

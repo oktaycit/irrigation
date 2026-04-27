@@ -18,5 +18,8 @@ Release/
 *.swo
 *~
 
+# Python
+__pycache__/
+
 # Generated files (optional - uncomment if needed)
 # Drivers/

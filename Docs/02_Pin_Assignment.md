@@ -177,7 +177,7 @@ Röle COM → Güç Kaynağı
 
 ---
 
-### 2.6 USART1 - Debug/PC İletişimi
+### 2.6 USART1 - stm32/Debug/PC İletişimi
 
 | Fonksiyon | STM32F407VET6 | Pin No | Açıklama |
 |-----------|---------------|--------|----------|
@@ -312,6 +312,11 @@ Bu bolum, dinamik ihtiyac modelini besleyecek ek sensorler icin tavsiye edilen b
 | Sensor | Onerilen Pin | Arabirim | Durum | Not |
 |--------|--------------|----------|-------|-----|
 | Isik sensoru (`BH1750` / `VEML7700`) | `PB8`, `PB9` | I2C1 | Paylasimli | EEPROM ile ayni hat |
+| SCD41 CO2/nem/sicaklik | `PB8`, `PB9` | I2C1 | Paylasimli | Sera ic iklim ana sensoru, pano ici/kisa kablo |
+| DS18B20 sicaklik | `PB12` | 1-Wire | Mevcut/ayrilacak | Su deposu, besleme hatti, dis ortam veya yedek sicaklik |
+| PCF8574/PCF8575 role/input expander | `PB8`, `PB9` | I2C1 | Paylasimli | Pano ici dusuk hizli iklim cikislari/inputlari |
+| Modbus/RS485 iklim modulu | `PA9`, `PA10`, `PB11` | USART1 + DE | Paylasimli | Uzun kablo/dagitik sensor-role modulleri |
+| Ruzgar hiz/yon sensoru | Gateway USB-RS485 veya `PA9`, `PA10`, `PB11` | Modbus RTU | Onerilen | Dis ortam ultrasonik sensor; gateway uzerinden okumak tercih edilir |
 | Debi sensoru | `PB13` | GPIO/EXTI veya timer capture | Ayrilacak | Pulse sayimi icin uygun |
 | Dusuk su seviyesi | `PB14` | GPIO input | Ayrilacak | `NC` fail-safe tavsiye edilir |
 | Drenaj sensoru | `PB15` | GPIO input | Opsiyonel | 2. dijital input olarak kullanilabilir |
@@ -323,6 +328,10 @@ Pin secim mantigi:
 - `PB13`, `PB14`, `PB15` dokunmatik, UART, vana ve EEPROM hatlariyla cakismadan iki veya uc saha dijital girisi ayirmayi saglar.
 - `PC5`, mevcut analog hatlardan bagimsiz ek bir analog kanal olarak basinç veya nem olcumu icin uygundur.
 - I2C sensorler icin yeni bus acmak yerine mevcut `I2C1` hatti kullanilabilir.
+- SCD41 ve PCF genisleticiler I2C uzerinde adres cakismasi olmadan paylasilabilir; uzun sera kablosunda I2C yerine Modbus/RS485 tercih edilmelidir.
+- DS18B20 hattinda birden fazla sensor kullanilacaksa her sensorun ROM ID'si gateway/STM32 konfigurasyonunda tutulmalidir.
+- Modbus/RS485, USART1 debug hattiyla ayni pinleri kullanirsa urun modunda debug/iklim bus rolu net ayrilmalidir.
+- Ruzgar sensoru uzun kablo ve dis ortam ekipmani oldugu icin ilk prototipte Banana Pi/gateway uzerinde ayri USB-RS485 adapter ile okunmalidir.
 
 Donanim notlari:
 

@@ -5,7 +5,7 @@ Bu not, `Core` firmware katmaninin 2026-04-26 itibariyla yazilim tarafinda hangi
 ## Dogrulanan Yazilim Kapsami
 
 - [x] Temiz derleme alindi: `make clean && make -j4`
-- [x] Firmware artefaktlari yeniden uretildi: `Debug/irrigation.elf`, `Debug/irrigation.hex`, `Debug/irrigation.bin`
+- [x] Firmware artefaktlari yeniden uretildi: `stm32/Debug/irrigation.elf`, `stm32/Debug/irrigation.hex`, `stm32/Debug/irrigation.bin`
 - [x] Derleme cikisinda compiler warning gorulmedi
 - [x] `dosing_controller`, `parcel_scheduler`, `fault_manager`, `irrigation_runtime`, `irrigation_persistence`, `irrigation_schedule_trigger` ve `irrigation_run_session` build icinde
 - [x] Dozaj akisi blocking bekleme yerine state-machine akisi ile ilerliyor
@@ -24,9 +24,20 @@ Son temiz build:
 Memory region         Used Size  Region Size  %age Used
 CCMRAM:                   0 B        64 KB      0.00%
 RAM:                  14208 B       128 KB     10.84%
-FLASH:               140432 B       512 KB     26.79%
+FLASH:               140444 B       512 KB     26.79%
 
-text/data/bss/dec: 139872 / 552 / 13656 / 154080
+text/data/bss/dec: 139884 / 552 / 13656 / 154092
+```
+
+2026-04-27 Insight gateway protokol yukunden sonra:
+
+```text
+Memory region         Used Size  Region Size  %age Used
+CCMRAM:                   0 B        64 KB      0.00%
+RAM:                  14208 B       128 KB     10.84%
+FLASH:               141784 B       512 KB     27.04%
+
+text/data/bss/dec: 141224 / 552 / 13656 / 155432
 ```
 
 ## Core Kapanis Karari
@@ -42,7 +53,7 @@ text/data/bss/dec: 139872 / 552 / 13656 / 154080
 - [ ] pH/EC sensor okumalarini bagli ve bagli degil senaryolarinda dogrula
 - [ ] Otomatik modda en az 1 tam parsel dongusunu kart uzerinde tamamla
 - [ ] Sensor hata, emergency stop ve kritik hata durumunda tum vanalarin guvenli kapandigini dogrula
-- [ ] USB CDC `PING` cevapsizligini USB/protokol tarafinda ayri incele
+- [x] USB CDC `PING` cevapsizligini USB/protokol tarafinda ayri incele
 
 ## Sonraki Kisa Rota
 

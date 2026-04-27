@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sera Sulama Edge Paneli</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="splash" class="splash">
+    <div class="splash-content">
+      <div class="splash-mark">IR</div>
+      <div class="loader"></div>
+      <p>Sistem yükleniyor...</p>
+    </div>
+  </div>
+
+  <div class="shell">
+    <header class="header">
+      <h1><span class="title-mark">IR</span> Sera Sulama Edge Paneli</h1>
+      <div class="status-bar">
+        <span id="connectionBadge" class="status-pill pending">Bağlanıyor</span>
+        <span id="portLabel" class="meta-pill">CDC bekleniyor</span>
+        <span id="hostLabel" class="meta-pill">--</span>
+        <span id="clockLabel" class="meta-pill">--:--</span>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <section class="control-panel">
+        <section class="mode-panel">
+          <div>
+            <span class="kicker">Çalışma Modu</span>
+            <strong id="modeLabel">Program İzleme</strong>
+          </div>
+          <div class="segmented">
+            <button class="active" type="button" data-mode="program">Program</button>
+            <button type="button" data-mode="service">Servis</button>
+          </div>
+        </section>
+
+        <section class="targets">
+          <article class="target-card ph">
+            <div class="icon">pH</div>
+            <div>
+              <span>pH Hedefi</span>
+              <strong id="phTarget">--</strong>
+            </div>
+          </article>
+          <article class="target-card ec">
+            <div class="icon">EC</div>
+            <div>
+              <span>EC Hedefi</span>
+              <strong id="ecTarget">--</strong>
+            </div>
+          </article>
+          <article class="target-card flush">
+            <div class="icon">PF</div>
+            <div>
+              <span>Pre Flush</span>
+              <strong id="preFlush">-- sn</strong>
+            </div>
+          </article>
+        </section>
+
+        <section class="program-editor">
+          <div class="section-head">
+            <div>
+              <span class="kicker">Reçete</span>
+              <h2 id="editorTitle">Program 1</h2>
+            </div>
+            <button id="refreshBtn" class="icon-button" type="button" title="Yenile">R</button>
+          </div>
+
+          <form id="programForm" class="form-grid">
+            <label class="toggle-row">
+              <input id="enabled" type="checkbox">
+              <span>Aktif</span>
+            </label>
+            <label>
+              Başlangıç
+              <input id="start_hhmm" type="time" required>
+            </label>
+            <label>
+              Bitiş
+              <input id="end_hhmm" type="time" required>
+            </label>
+            <label>
+              Sulama dk
+              <input id="irrigation_min" type="number" min="1" max="999" required>
+            </label>
+            <label>
+              Bekleme dk
+              <input id="wait_min" type="number" min="0" max="999" required>
+            </label>
+            <label>
+              Tekrar
+              <input id="repeat_count" type="number" min="1" max="99" required>
+            </label>
+            <label>
+              Gün Maskesi
+              <input id="days_mask" type="number" min="1" max="127" required>
+            </label>
+            <label>
+              pH x100
+              <input id="ph_x100" type="number" min="0" max="1400" required>
+            </label>
+            <label>
+              EC x100
+              <input id="ec_x100" type="number" min="0" max="2000" required>
+            </label>
+            <label>
+              Pre Flush sn
+              <input id="pre_flush_sec" type="number" min="0" max="900" required>
+            </label>
+            <label>
+              Post Flush sn
+              <input id="post_flush_sec" type="number" min="0" max="900" required>
+            </label>
+          </form>
+
+          <div class="valve-mask">
+            <span>Parseller</span>
+            <div id="valveGrid" class="valve-grid"></div>
+          </div>
+
+          <div class="fert-grid">
+            <label>A <input id="fert_a_pct" type="number" min="0" max="100"></label>
+            <label>B <input id="fert_b_pct" type="number" min="0" max="100"></label>
+            <label>C <input id="fert_c_pct" type="number" min="0" max="100"></label>
+            <label>D <input id="fert_d_pct" type="number" min="0" max="100"></label>
+          </div>
+
+          <div class="action-row">
+            <button id="saveBtn" class="primary-action" type="button">Kaydet</button>
+            <span id="saveStatus" class="save-status"></span>
+          </div>
+        </section>
+      </section>
+
+      <section class="monitor-panel">
+        <section class="live-card">
+          <div class="section-head">
+            <div>
+              <span class="kicker">Canlı Durum</span>
+              <h2>STM32 Gateway</h2>
+            </div>
+            <span id="pingBadge" class="status-dot"></span>
+          </div>
+          <div class="vitals-row">
+            <article>
+              <span>Aktif Program</span>
+              <strong id="activeProgram">--</strong>
+            </article>
+            <article>
+              <span>Açık Parsel</span>
+              <strong id="activeValves">--</strong>
+            </article>
+            <article>
+              <span>Toplam Döngü</span>
+              <strong id="cycleSummary">--</strong>
+            </article>
+          </div>
+          <div class="insight-grid">
+            <article>
+              <span>Bağlantı</span>
+              <p id="connectionText">Bekleniyor.</p>
+            </article>
+            <article>
+              <span>Reçete Sağlığı</span>
+              <p id="healthText">Programlar okunuyor.</p>
+            </article>
+            <article>
+              <span>Son Olay</span>
+              <p id="eventText">Henüz kayıt yok.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="program-list-card">
+          <div class="section-head">
+            <div>
+              <span class="kicker">Programlar</span>
+              <h2>8 Parsel Reçetesi</h2>
+            </div>
+          </div>
+          <div id="programList" class="program-list"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
